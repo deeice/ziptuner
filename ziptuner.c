@@ -31,6 +31,7 @@ char TAGS_URL[256] =
   "http://www.radio-browser.info/webservice/json/stations/bytag/";
 #endif
 
+char *destdir = ".";
 char tags[256] = "";
 
 /*
@@ -142,8 +143,8 @@ int get_url(char *url) {
   CURLcode res;
   char *s;
   struct MemoryStruct chunk;
-  chunk.memory = (char *)malloc(1);
-  chunk.size = 0;
+  chunk.memory = (char *)malloc(1); /* will be grown as needed by WriteMemoryCallback() */ 
+  chunk.size = 0; /* no data at this point */
   printf("\nURL = %s\n\n", url);
   curl_global_init(CURL_GLOBAL_ALL);
   curl_handle = curl_easy_init();
@@ -165,15 +166,11 @@ int get_url(char *url) {
       cmd = malloc(chunk.size);
       int n = cJSON_GetArraySize(json);
       printf("found %d tags\n",n);
-#if 0
-      sprintf(cmd, "zenity  --list --title=\"Pick One\" --text ");
-      sprintf(cmd+strlen(cmd),"\"%d Stations matching <%s>\"", n, tags);
-      strcat(cmd, " --text --radiolist  --column \"Pick\" --column \"Station\"");
-#else
+
       sprintf(cmd, "dialog  --clear --title \"Pick a station\" --menu ");
       sprintf(cmd+strlen(cmd),"\"%d Stations matching <%s>\"", n, tags);
       strcat(cmd," 21 51 14 ");
-#endif
+
       for (i=0; i<n; i++){
 	cJSON *item = cJSON_GetArrayItem(json, i);
 	char *id = cJSON_GetObjectItem(item,"id")->valuestring;
@@ -198,7 +195,10 @@ int get_url(char *url) {
 	fprintf(fd,"\n");
 	fclose(fd);
       }
-      if (n > 0) {
+      if (n <= 0) {
+	printf("messagebox Got nothing\n");
+      }
+      else {
 	printf("\n%s\n", cmd);
 	system ( cmd ) ;
 	if (!(fd = fopen("tempfile", "r")))
@@ -221,6 +221,8 @@ int get_url(char *url) {
 	  
 	  printf("%d: %s\n",i,url);
 	  
+	  /* Start over */
+	  curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
 	  free(chunk.memory);
 	  chunk.memory = (char *)malloc(1);
 	  chunk.size = 0;
@@ -240,7 +242,7 @@ int get_url(char *url) {
 	      *s = '-'; // Quotes inside strings make for ugly filenames.
 	    for (s = strpbrk(name, " "); s; s = strpbrk(s, " "))
 	      *s = '_'; // Remove spaces from filenames.
-	    sprintf(buff, "%s.pls",name);
+	    sprintf(buff, "%s/%s.pls",destdir, name);
 	    if ((fd = fopen(buff, "w"))){
 	      fprintf(fd, chunk.memory); 
 	      fclose(fd);
@@ -249,14 +251,13 @@ int get_url(char *url) {
 	  }	
 	}
       }
-      else {
-	printf("messagebox Got nothing\n");
-      }
-
-      exit(0);
-
     }
   }
+  curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
+  free(chunk.memory);
+  chunk.size = 0;
+  /* we're done with libcurl, so clean it up */ 
+  curl_global_cleanup();
 }
 
 /************************************************/
@@ -265,12 +266,44 @@ int main(int argc, char **argv){
   FILE *fd;
   int i;
 
-  printf("RADIO (C) MM 2014\n");
-
 #if 0
-  printf("Search for: \n"); fflush(stdout);
-  fgets(tags,255,stdin);
+  /* Just in case I want more args later... */
+  while((--argc>0) && (**++argv=='-'))
+  {
+    char c;
+    int n;
+    //printf("processing(%d, %s)\n",argc,*argv); 
+    while(c=*++*argv) // Eat a bunch of one char commands after -.
+    {
+      //printf("cmd %c (%d, %s)\n",c, argc,*argv); 
+      switch(c)
+      {
+      case 'x':
+	someboolvar ^= 1;
+	break;
+      case 'h':
+      case '?':
+	printf("Usage:  ziptuner -x [outputDir]\n"
+	       "\n"
+	       "Internet radio playlist fetcher.\n"
+	       "\n"
+	       "  x = someboolvar.\n"
+	       "\n"
+	       "eg:"
+	       "  ziptuner -x /my/playlist/folder\n"
+	       );
+	exit(0);
+      default:
+	// ignore it
+	break;
+      }
+    }
+  }
 #else
+  if (argc > 1)
+    destdir = argv[1];
+#endif
+
   sprintf(cmd, "dialog  --clear --title \"Zippy Internet Radio Tuner\" --menu ");
   sprintf(cmd+strlen(cmd),"\"Select Type of Search\"");
   strcat(cmd," 21 51 14");
@@ -336,7 +369,7 @@ int main(int argc, char **argv){
   printf("tags = <%s>\n");
   if (!strlen(tags))
     exit(0);
-#endif
+
   if (s = strpbrk(tags, "\r\n"))
     *s = 0;
   strcat(TAGS_URL, tags);
@@ -351,6 +384,6 @@ int main(int argc, char **argv){
     get_url(TAGS_URL); 
   } 
 
-  printf("end\n");        
+   printf("end\n");        
   return 0;	          
 }
