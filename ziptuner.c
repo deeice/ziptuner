@@ -64,33 +64,14 @@ struct MemoryStruct {
   size_t size;
 };
 
-#if 0
-SDL_Surface* screen = NULL;
-int rotateScreen=0;
-
-TTF_Font *font_control = NULL;
-TTF_Font *font_text_date = NULL;
-TTF_Font *font_text_radios = NULL;
-TTF_Font *font_text_status = NULL;
-TTF_Font *font_text_weather = NULL;
-TTF_Font *font_text_ip = NULL;
-#endif
-
-unsigned int lastRadioAlarmTime=0;
-unsigned int lastWeatherAlarmTime=0;
-
 struct ifreq ifr_eth;
 struct ifreq ifr_wlan;
 int int_connection=0;
 
-pthread_mutex_t mutex=PTHREAD_MUTEX_INITIALIZER;
+int width, height;
 
-int quit=0;
-unsigned int radioPlay=0;
 char cmd_out[CMD_OUT_MAX];  
 char *cmd = cmd_out;
-
-int ip_wlan_x;
 
 FILE *fd;
 char buff[255];
@@ -266,6 +247,19 @@ int main(int argc, char **argv){
   FILE *fd;
   int i;
 
+  /* Get terminal size for better dialog size estimates. */
+  struct winsize ws;
+  width = height = -1;
+  if (ioctl(fileno(stdout), TIOCGWINSZ, &ws) >= 0) {
+    width = ws.ws_col;
+    height = ws.ws_row;
+  }
+  if (width < 5)
+    width = 80;
+  if (height < 2)
+    height = 23;
+  //printf("W,H = (%d, %d)\n",width,height); exit(0);
+ 
 #if 0
   /* Just in case I want more args later... */
   while((--argc>0) && (**++argv=='-'))
