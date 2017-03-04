@@ -18,18 +18,10 @@
 
 // ------------ Setup --------------------------
 
-#define WIDTH 320
-#define HEIGHT 240
-
 #define CMD_OUT_MAX 1024
 
-#if 0
-char *TAGS_URL = (char *)
-    "http://www.radio-browser.info/webservice/json/tags";
-#else
 char TAGS_URL[256] = 
   "http://www.radio-browser.info/webservice/json/stations/bytag/";
-#endif
 
 char *destdir = ".";
 char tags[256] = "";
@@ -299,8 +291,8 @@ int main(int argc, char **argv){
 #endif
 
   sprintf(cmd, "dialog  --clear --title \"Zippy Internet Radio Tuner\" --menu ");
-  sprintf(cmd+strlen(cmd),"\"Select Type of Search\"");
-  strcat(cmd," 21 51 14");
+  strcat(cmd,"\"Select Type of Search\"");
+  sprintf(cmd+strlen(cmd)," %d %d 14", height-3, width-6);
   strcat(cmd," 1 \"Search by Tag\"");
   strcat(cmd," 2 \"Search by Country\"");
   strcat(cmd," 3 \"Search by State\"");
@@ -347,7 +339,7 @@ int main(int argc, char **argv){
     sprintf(cmd, "dialog --title \"Internet Radio Search by Tag\" --clear --inputbox ");
     break;
   }
-  strcat(cmd, "\"Search for:\" 16 51 2> tempfile");
+  sprintf(cmd+strlen(cmd),"\"Search for:\" %d %d 2> tempfile", height-3, width-6);
   system ( cmd ) ;
   if (!(fd = fopen("tempfile", "r")))
   {
@@ -361,23 +353,19 @@ int main(int argc, char **argv){
   //remove("tempfile");
   strcpy(tags, buff);
   printf("tags = <%s>\n");
-  if (!strlen(tags))
-    exit(0);
-
-  if (s = strpbrk(tags, "\r\n"))
-    *s = 0;
-  strcat(TAGS_URL, tags);
-
-  // gen_tp();  
-  get_int_ip();  // Works on zipit, but not on laptop, so just set connection=1.
-  int_connection=1; 
-
-  //signal (SIGALRM, catch_alarm);
- 
-  if (int_connection) {
-    get_url(TAGS_URL); 
-  } 
-
-   printf("end\n");        
+  if (strlen(tags)) 
+  {
+    if (s = strpbrk(tags, "\r\n"))
+      *s = 0;
+    strcat(TAGS_URL, tags);
+    // gen_tp();  
+    get_int_ip();  // Works on zipit, but not laptop, so just set connection=1.
+    int_connection=1; 
+    //signal (SIGALRM, catch_alarm);
+    if (int_connection) {
+      get_url(TAGS_URL); 
+    }
+  }
+  printf("W,H = (%d, %d)\n",width,height);
   return 0;	          
 }
