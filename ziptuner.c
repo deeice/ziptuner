@@ -140,9 +140,9 @@ int get_url(char *url) {
       int n = cJSON_GetArraySize(json);
       printf("found %d tags\n",n);
 
-      sprintf(cmd, "dialog  --clear --title \"Pick a station\" --menu ");
+      sprintf(cmd, "dialog --clear --title \"Pick a station\" --menu ");
       sprintf(cmd+strlen(cmd),"\"%d Stations matching <%s>\"", n, tags);
-      strcat(cmd," 21 51 14 ");
+      sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
 
       for (i=0; i<n; i++){
 	cJSON *item = cJSON_GetArrayItem(json, i);
@@ -290,9 +290,9 @@ int main(int argc, char **argv){
     destdir = argv[1];
 #endif
 
-  sprintf(cmd, "dialog  --clear --title \"Zippy Internet Radio Tuner\" --menu ");
+  sprintf(cmd, "dialog --clear --title \"Zippy Internet Radio Tuner\" --menu ");
   strcat(cmd,"\"Select Type of Search\"");
-  sprintf(cmd+strlen(cmd)," %d %d 14", height-3, width-6);
+  sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-9);
   strcat(cmd," 1 \"Search by Tag\"");
   strcat(cmd," 2 \"Search by Country\"");
   strcat(cmd," 3 \"Search by State\"");
@@ -309,6 +309,7 @@ int main(int argc, char **argv){
     //remove("tempfile");
     //return NULL;
   }
+  buff[0] = 0;
   while (fgets(buff, 255, fd) != NULL)
     {}
   fclose(fd);
@@ -346,6 +347,7 @@ int main(int argc, char **argv){
     //remove("tempfile");
     //return NULL;
   }
+  buff[0] = 0;
   while (fgets(buff, 255, fd) != NULL)
     {}
   fclose(fd);
