@@ -23,6 +23,7 @@
 char TAGS_URL[256] = 
   "http://www.radio-browser.info/webservice/json/stations/bytag/";
 
+int  destnum = 0;
 char *destdir = ".";
 char tags[256] = "";
 
@@ -65,8 +66,10 @@ int width, height;
 char cmd_out[CMD_OUT_MAX];  
 char *cmd = cmd_out;
 
+char ext[32] = ".pls";
+
 FILE *fd;
-char buff[255];
+char buff[256];
 	
 /************************************************/
 static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp) {
@@ -114,7 +117,7 @@ void get_int_ip() {
 int get_url(char *url) {
   CURL *curl_handle;
   CURLcode res;
-  char *s;
+  char *s, *playlist;
   struct MemoryStruct chunk;
   chunk.memory = (char *)malloc(1); /* will be grown as needed by WriteMemoryCallback() */ 
   chunk.size = 0; /* no data at this point */
@@ -148,7 +151,7 @@ int get_url(char *url) {
 	cJSON *item = cJSON_GetArrayItem(json, i);
 	char *id = cJSON_GetObjectItem(item,"id")->valuestring;
 	char *name = cJSON_GetObjectItem(item,"name")->valuestring;
-	char *url = cJSON_GetObjectItem(item,"url")->valuestring;
+	char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
 	printf("% 3d %s\n",i,name);
 	strcat(cmd," ");
 	sprintf(cmd+strlen(cmd),"%d",i+1);
@@ -190,9 +193,15 @@ int get_url(char *url) {
 	  cJSON *item = cJSON_GetArrayItem(json, i-1);
 	  char *id = cJSON_GetObjectItem(item,"id")->valuestring;
 	  char *name = cJSON_GetObjectItem(item,"name")->valuestring;
+	  char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
 	  sprintf(url, "http://www.radio-browser.info/webservice/v2/pls/url/%s",id);
 	  
+	  /* DEBUG stuff.  Delete when fully functional */
 	  printf("%d: %s\n",i,url);
+	  if ((fd = fopen("id.url", "w"))){
+	    fprintf(fd, url); 
+	    fclose(fd);
+	  }
 	  
 	  /* Start over */
 	  curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
@@ -211,16 +220,56 @@ int get_url(char *url) {
 	    fprintf(stderr, "curl_easy_perform() failed: %s\n",curl_easy_strerror(res));
 	  }
 	  else {
+	    // Fix the filename and then save the playlist (if we got one).
 	    for (s = strpbrk(name, "\""); s; s = strpbrk(s, "\""))
 	      *s = '-'; // Quotes inside strings make for ugly filenames.
 	    for (s = strpbrk(name, " "); s; s = strpbrk(s, " "))
 	      *s = '_'; // Remove spaces from filenames.
-	    sprintf(buff, "%s/%s.pls",destdir, name);
-	    if ((fd = fopen(buff, "w"))){
-	      fprintf(fd, chunk.memory); 
+	    sprintf(buff, "%s/%s%s",destdir, name, ext);
+	    playlist = chunk.memory;
+
+	    // Verify we got a playlist.  If not, try the url from the big list.
+	    //if (strstr(p, "did not find station with matching id")) {
+	    if (strstr(playlist, "did not find station")) {
+	      printf("\nDid NOT find station\n");
+	      playlist = NULL;
+	      if(!strstr(item_url,".pls") && !strstr(item_url,".m3u")) {
+		sprintf(url,"[playlist]\nFile1=%s\n",item_url);
+		playlist = url;
+	      }
+	      else {
+		// NOTE: if I switch to default ext to .m3u (for gmu compatibility?)
+		// then I will have to change this bit to swap in .pls
+		if (strstr(item_url,".m3u")) 
+		  sprintf(ext, ".m3u"); // item_url has .m3u extension, so output should too.
+
+		/* Start over */
+		curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
+		free(chunk.memory);
+		chunk.memory = (char *)malloc(1);
+		chunk.size = 0;
+		
+		curl_global_init(CURL_GLOBAL_ALL);
+		curl_handle = curl_easy_init();
+		curl_easy_setopt(curl_handle, CURLOPT_URL,item_url);
+		curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+		curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
+		curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+		res = curl_easy_perform(curl_handle);
+		if(res != CURLE_OK) {
+		  fprintf(stderr, "curl_easy_perform() failed: %s\n",curl_easy_strerror(res));
+		}
+		else {
+		  printf("%d; %s\n",chunk.size,chunk.memory);
+		  playlist = chunk.memory;
+		}
+	      }
+	    }
+
+	    if (playlist && (fd = fopen(buff, "w"))){
+	      fprintf(fd, playlist); 
 	      fclose(fd);
 	    }
-	    printf("%d; %s\n",chunk.size,chunk.memory);
 	  }	
 	}
       }
@@ -286,6 +335,9 @@ int main(int argc, char **argv){
     }
   }
 #else
+  // I think we just want to save destnum=argc and destdir=argv.
+  // Then we can loop at the end and save to multiple locations.
+  //   For each:  if loc is a dir the save .pls, if file then append.
   if (argc > 1)
     destdir = argv[1];
 #endif
