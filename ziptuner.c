@@ -14,18 +14,21 @@
 #include <net/if.h>
 #include <arpa/inet.h>
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "cJSON.h"
 
 // ------------ Setup --------------------------
 
 #define CMD_OUT_MAX 1024
 
-char TAGS_URL[256] = 
+char TAGS_URL[512] = 
   "http://www.radio-browser.info/webservice/json/stations/bytag/";
 
 int  destnum = 0;
 char *destdir = ".";
-char tags[256] = "";
+char tags[512] = "";
 
 /*
 First get a list to choose from.
@@ -47,6 +50,7 @@ http://www.radio-browser.info/webservice/json/codecs
 http://www.radio-browser.info/webservice/json/stations/bycodec/searchterm 
 
 http://www.radio-browser.info/webservice/v2/pls/url/nnnnn
+http://www.radio-browser.info/webservice/v2/m3u/url/nnnnn
 */
 
 // ---------------------------------------------
@@ -66,7 +70,7 @@ int width, height;
 char cmd_out[CMD_OUT_MAX];  
 char *cmd = cmd_out;
 
-char ext[32] = ".pls";
+char ext[32] = ".m3u";
 
 FILE *fd;
 char buff[256];
@@ -194,7 +198,8 @@ int get_url(char *url) {
 	  char *id = cJSON_GetObjectItem(item,"id")->valuestring;
 	  char *name = cJSON_GetObjectItem(item,"name")->valuestring;
 	  char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
-	  sprintf(url, "http://www.radio-browser.info/webservice/v2/pls/url/%s",id);
+	  //sprintf(url, "http://www.radio-browser.info/webservice/v2/pls/url/%s",id);
+	  sprintf(url, "http://www.radio-browser.info/webservice/v2/m3u/url/%s",id);
 	  
 	  /* DEBUG stuff.  Delete when fully functional */
 	  printf("%d: %s\n",i,url);
@@ -220,28 +225,21 @@ int get_url(char *url) {
 	    fprintf(stderr, "curl_easy_perform() failed: %s\n",curl_easy_strerror(res));
 	  }
 	  else {
-	    // Fix the filename and then save the playlist (if we got one).
-	    for (s = strpbrk(name, "\""); s; s = strpbrk(s, "\""))
-	      *s = '-'; // Quotes inside strings make for ugly filenames.
-	    for (s = strpbrk(name, " "); s; s = strpbrk(s, " "))
-	      *s = '_'; // Remove spaces from filenames.
-	    sprintf(buff, "%s/%s%s",destdir, name, ext);
-	    playlist = chunk.memory;
-
 	    // Verify we got a playlist.  If not, try the url from the big list.
-	    //if (strstr(p, "did not find station with matching id")) {
+	    playlist = chunk.memory;
+	    //if (strstr(playlist, "did not find station with matching id")) {
 	    if (strstr(playlist, "did not find station")) {
-	      printf("\nDid NOT find station\n");
 	      playlist = NULL;
 	      if(!strstr(item_url,".pls") && !strstr(item_url,".m3u")) {
-		sprintf(url,"[playlist]\nFile1=%s\n",item_url);
+		printf("\nDid NOT find station.  Using item_url.\n");
+		//sprintf(url,"[playlist]\nFile1=%s\n",item_url);
+		sprintf(url,"%s\n",item_url); // Just a link should work for m3u file...
 		playlist = url;
 	      }
 	      else {
-		// NOTE: if I switch to default ext to .m3u (for gmu compatibility?)
-		// then I will have to change this bit to swap in .pls
-		if (strstr(item_url,".m3u")) 
-		  sprintf(ext, ".m3u"); // item_url has .m3u extension, so output should too.
+		printf("\nDid NOT find station.  Fetching item_url.\n");
+		if (strstr(item_url,".pls")) 
+		  sprintf(ext, ".pls"); // item_url has .pls extension, so output should too.
 
 		/* Start over */
 		curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
@@ -265,12 +263,66 @@ int get_url(char *url) {
 		}
 	      }
 	    }
+	    if (playlist){ // Fix the filename and then save the playlist (if we got one).
+	      struct stat path_stat;
 
-	    if (playlist && (fd = fopen(buff, "w"))){
-	      fprintf(fd, playlist); 
-	      fclose(fd);
-	    }
-	  }	
+	      for (s = strpbrk(name, "\""); s; s = strpbrk(s, "\""))
+		*s = '-'; // Quotes inside strings make for ugly filenames.
+	      for (s = strpbrk(name, " "); s; s = strpbrk(s, " "))
+		*s = '_'; // Remove spaces from filenames.
+
+	      printf("Loop through destfiles/dirs and save the playlist\n");
+	      { // Loop through destfiles/dirs and save the playlist
+		if ((-1 != access(destdir, F_OK)) && 
+		     (0 == stat(destdir, &path_stat)) && S_ISDIR(path_stat.st_mode)) { 
+		  printf("Found directory\n");
+		  // If directory, create a new file.
+		  sprintf(buff, "%s/%s%s",destdir, name, ext);
+		  if (fd = fopen(buff, "w")){
+		    fprintf(fd, playlist); 
+		    fclose(fd);
+		  }
+		  printf("Make new file %s\n",buff);
+		}
+		else { // destdir is a file.  Append to it in proper format.
+		  printf("Found filename\n");
+
+		  //Segfault here trying to write to anon exisging file
+		  printf("%s\n",destdir);
+
+		  char *p = playlist;
+		  
+		  // I should be checking if ext matches destdir.
+		  // Because ext can be forced on us by using item_url
+		  // I don't think we can fix the contents if they dont match.
+
+		  if (strstr(destdir,".m3u")) {
+		    //if (s = strstr(playlist,"#EXTM3U")) p = s+7;
+		    if (s = strstr(playlist,"#EXTINF:")) p = s;
+		  }
+		  else { // .pls file
+		    printf("Its a .pls file\n");
+#if 0 
+		    // This does not work, sometimes it segfaults...
+		    // We expect to fetch a .m3u but item_url might be .pls
+		    // Gotta check ext which is set to match item_url when thats used.
+		    if (s = strstr(playlist,"http:")) {
+		      sprintf(url, "[playlist]\nFile1=%s",s);
+		      p = url;
+		    }
+#endif
+		  }
+		  printf("Opening %s\n",destdir);
+		  if (fd = fopen(destdir, "a")){
+		    printf("Writing %s\n",p);
+		    fprintf(fd, p); 
+		    fclose(fd);
+		  }
+		  printf("Append to file %s\n",destdir);
+		}
+	      }
+	    }	
+	  }
 	}
       }
     }
