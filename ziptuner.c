@@ -26,8 +26,9 @@
 char TAGS_URL[512] = 
   "http://www.radio-browser.info/webservice/json/stations/bytag/";
 
-int  destnum = 0;
-char *destdir = ".";
+int  destnum = 1;
+char *destfile = ".";
+char **dest = &destfile;
 char tags[512] = "";
 
 /*
@@ -264,61 +265,63 @@ int get_url(char *url) {
 	      }
 	    }
 	    if (playlist){ // Fix the filename and then save the playlist (if we got one).
-	      struct stat path_stat;
 
 	      for (s = strpbrk(name, "\""); s; s = strpbrk(s, "\""))
 		*s = '-'; // Quotes inside strings make for ugly filenames.
 	      for (s = strpbrk(name, " "); s; s = strpbrk(s, " "))
 		*s = '_'; // Remove spaces from filenames.
 
+	      // Loop through destinations and save the playlist
 	      printf("Loop through destfiles/dirs and save the playlist\n");
-	      { // Loop through destfiles/dirs and save the playlist
-		if ((-1 != access(destdir, F_OK)) && 
-		     (0 == stat(destdir, &path_stat)) && S_ISDIR(path_stat.st_mode)) { 
+	      for (i=0; i < destnum; i++) {
+		struct stat path_stat;
+		int fileexists = (-1 != access(dest[i], F_OK));
+
+		destfile = dest[i];
+		printf("dest[%d] = %s (exists = %d)\n", i, destfile, fileexists);
+
+		if (fileexists && (0 == stat(destfile, &path_stat)) && S_ISDIR(path_stat.st_mode)) { 
 		  printf("Found directory\n");
 		  // If directory, create a new file.
-		  sprintf(buff, "%s/%s%s",destdir, name, ext);
+		  sprintf(buff, "%s/%s%s",destfile, name, ext);
 		  if (fd = fopen(buff, "w")){
 		    fprintf(fd, playlist); 
 		    fclose(fd);
 		  }
 		  printf("Make new file %s\n",buff);
 		}
-		else { // destdir is a file.  Append to it in proper format.
-		  printf("Found filename\n");
-
-		  //Segfault here trying to write to anon exisging file
-		  printf("%s\n",destdir);
-
+		else { // destfile is a file.  Append to it in proper format.
 		  char *p = playlist;
 		  
-		  // I should be checking if ext matches destdir.
-		  // Because ext can be forced on us by using item_url
-		  // I don't think we can fix the contents if they dont match.
-
-		  if (strstr(destdir,".m3u")) {
-		    //if (s = strstr(playlist,"#EXTM3U")) p = s+7;
-		    if (s = strstr(playlist,"#EXTINF:")) p = s;
-		  }
-		  else { // .pls file
-		    printf("Its a .pls file\n");
-#if 0 
-		    // This does not work, sometimes it segfaults...
-		    // We expect to fetch a .m3u but item_url might be .pls
-		    // Gotta check ext which is set to match item_url when thats used.
-		    if (s = strstr(playlist,"http:")) {
-		      sprintf(url, "[playlist]\nFile1=%s",s);
-		      p = url;
+		  if (fileexists) {// We must append, and maybe strip some things.
+		    printf("Append to file %s\n",destfile);
+		    if (strstr(destfile,".m3u")) {
+		      if (!strcmp(ext, ".m3u")) {
+			//if (s = strstr(playlist,"#EXTM3U")) p = s+7;
+			if (s = strstr(playlist,"#EXTINF:")) p = s;
+		      }
+		      // Just grab the urls.  Fix this to handle multiple urls.
+		      else if (s = strstr(playlist,"http")) p = s;
 		    }
-#endif
+		    else { // Appending to a .pls file
+		      if (!strcmp(ext, ".pls")) {
+			if (s = strstr(playlist,"File1=http")) p = s;
+		      }
+		      else { // Appending to .pls, but we fetched .m3u (FIXME)
+			if (s = strstr(playlist,"http")) p = s;
+		      }
+		    }
 		  }
-		  printf("Opening %s\n",destdir);
-		  if (fd = fopen(destdir, "a")){
+		  else { // (FIXME)
+		    printf("Create file %s\n",destfile);
+		    // For now, just create new file and dump whatever format we got in it.
+		  }
+		  printf("Opening %s\n",destfile);
+		  if (fd = fopen(destfile, "a")){
 		    printf("Writing %s\n",p);
 		    fprintf(fd, p); 
 		    fclose(fd);
 		  }
-		  printf("Append to file %s\n",destdir);
 		}
 	      }
 	    }	
@@ -387,11 +390,13 @@ int main(int argc, char **argv){
     }
   }
 #else
-  // I think we just want to save destnum=argc and destdir=argv.
+  // Save destnum=argc and destfile=argv.
   // Then we can loop at the end and save to multiple locations.
-  //   For each:  if loc is a dir the save .pls, if file then append.
-  if (argc > 1)
-    destdir = argv[1];
+  if (argc > 1) {
+    destfile = argv[1];
+    dest = ++argv;
+    destnum = argc-1;
+  }
 #endif
 
   sprintf(cmd, "dialog --clear --title \"Zippy Internet Radio Tuner\" --menu ");

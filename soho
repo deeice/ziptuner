@@ -1,0 +1,3 @@
+#!/bin/sh
+
+TERM=xterm-color DIALOGRC=dialogrc.soho ./ziptuner /root/radio /root/.config/gmu/playlist.m3u
