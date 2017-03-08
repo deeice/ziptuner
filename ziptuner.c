@@ -135,8 +135,13 @@ int get_url(char *url) {
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
   curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
   res = curl_easy_perform(curl_handle);
+  cmd = NULL; // Do not free cmd when done unless we malloc for station pick dialog.
   if(res != CURLE_OK) {
     fprintf(stderr, "curl_easy_perform() failed: %s\n",curl_easy_strerror(res));
+    retval = 0;
+  }
+  else if (chunk.size <= 0) {
+    retval = 0;
   }
   else {
     cJSON *json = cJSON_Parse(chunk.memory); 
@@ -145,10 +150,10 @@ int get_url(char *url) {
      printf("Error before: [%s]\n",cJSON_GetErrorPtr());
     } else {
       int i = 0;
-      cmd = malloc(chunk.size);
       int n = cJSON_GetArraySize(json);
       printf("found %d tags\n",n);
 
+      cmd = malloc(chunk.size + 128); // Add extra space for "dialog..."
       sprintf(cmd, "dialog --clear --title \"Pick a station\" --menu ");
       sprintf(cmd+strlen(cmd),"\"%d Stations matching <%s>\"", n, tags);
       sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
@@ -178,10 +183,6 @@ int get_url(char *url) {
 	fclose(fd);
       }
       if (n <= 0) {
-	printf("messagebox Got nothing\n");
-	sprintf(cmd, "dialog --clear --title \"Sorry.\" --msgbox \"None Found.\"");
-	sprintf(cmd+strlen(cmd)," %d %d", 6, 20);
-	system ( cmd ) ;
 	retval = 0;
       }
       else {
@@ -335,6 +336,15 @@ int get_url(char *url) {
       }
     }
   }
+  if (cmd)
+    free(cmd);
+  if (0 == retval) {
+    printf("messagebox Got nothing\n");
+    cmd = cmd_out;
+    sprintf(cmd, "dialog --clear --title \"Sorry.\" --msgbox \"None Found.\"");
+    sprintf(cmd+strlen(cmd)," %d %d", 6, 20);
+    system ( cmd ) ;
+  }
   curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
   free(chunk.memory);
   chunk.size = 0;
@@ -481,13 +491,11 @@ int main(int argc, char **argv){
     //signal (SIGALRM, catch_alarm);
     if (int_connection) {
       if (!get_url(TAGS_URL)) {
-	// Sadly this leads to a segfault, so no retry for now.
-	/*
+	// I'm still not sure this really works, but give it a shot for now.
 	*cmd = cmd_out;
 	sprintf(TAGS_URL, "http://www.radio-browser.info/webservice/json/stations/bytag/");
 	sprintf(tags, "");
 	goto retry;
-	*/
       }
     }
   }
