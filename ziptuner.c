@@ -440,9 +440,8 @@ int main(int argc, char **argv){
   fclose(fd);
   printf("\n\n%s\n",buff);
 
-  //exit(0);
   if (1 != sscanf(buff, "%d", &i))
-    i = 1; // Default to search by tag
+    exit(0); // tempfile is empty, so they hit cancel.  Pack up and go home.
   switch (i) {
   case 2:
     sprintf(cmd, "dialog --title \"Internet Radio Search by Country\" --clear --inputbox ");
@@ -498,6 +497,10 @@ int main(int argc, char **argv){
 	goto retry;
       }
     }
+  }
+  else {
+    // tempfile is empty, so they hit cancel.  Pack up and go home.
+    goto retry;
   }
   printf("W,H = (%d, %d)\n",width,height);
   return 0;	          
