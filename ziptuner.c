@@ -120,6 +120,7 @@ void get_int_ip() {
 
 /************************************************/
 int get_url(char *url) {
+  int retval = 1;
   CURL *curl_handle;
   CURLcode res;
   char *s, *playlist;
@@ -178,6 +179,10 @@ int get_url(char *url) {
       }
       if (n <= 0) {
 	printf("messagebox Got nothing\n");
+	sprintf(cmd, "dialog --clear --title \"Sorry.\" --msgbox \"None Found.\"");
+	sprintf(cmd+strlen(cmd)," %d %d", 6, 20);
+	system ( cmd ) ;
+	retval = 0;
       }
       else {
 	printf("\n%s\n", cmd);
@@ -399,6 +404,7 @@ int main(int argc, char **argv){
   }
 #endif
 
+ retry:
   sprintf(cmd, "dialog --clear --title \"Zippy Internet Radio Tuner\" --menu ");
   strcat(cmd,"\"Select Type of Search\"");
   sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-9);
@@ -463,7 +469,7 @@ int main(int argc, char **argv){
   printf("\n\n%s\n",buff);
   //remove("tempfile");
   strcpy(tags, buff);
-  printf("tags = <%s>\n");
+  printf("tags = <%s>\n", tags);
   if (strlen(tags)) 
   {
     if (s = strpbrk(tags, "\r\n"))
@@ -474,7 +480,15 @@ int main(int argc, char **argv){
     int_connection=1; 
     //signal (SIGALRM, catch_alarm);
     if (int_connection) {
-      get_url(TAGS_URL); 
+      if (!get_url(TAGS_URL)) {
+	// Sadly this leads to a segfault, so no retry for now.
+	/*
+	*cmd = cmd_out;
+	sprintf(TAGS_URL, "http://www.radio-browser.info/webservice/json/stations/bytag/");
+	sprintf(tags, "");
+	goto retry;
+	*/
+      }
     }
   }
   printf("W,H = (%d, %d)\n",width,height);
