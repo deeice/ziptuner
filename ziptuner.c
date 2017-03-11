@@ -496,10 +496,12 @@ int main(int argc, char **argv){
 	sprintf(tags, "");
 	goto retry;
       }
+    printf("All done!.\n");
     }
   }
   else {
     // tempfile is empty, so they hit cancel.  Pack up and go home.
+    printf("tempfile is empty, so they hit cancel.\n");
     goto retry;
   }
   printf("W,H = (%d, %d)\n",width,height);
