@@ -1,0 +1,18 @@
+TODO:
+
+Save previous search url and add a "Resume Last Search" button on main list.
+
+Search by station name.
+
+Add main menu options to fetch the lists of tags, states, countries...
+
+Handle non-mp3 formats.  Either make note of it on gui or add alt players.
+
+Maybe multiselect stations instead of single select.
+
+Stay on station select screen if you hit play.
+
+Let play be the default instead of save?
+
+Come up with a scheme to stop playing?  Send a bogus filename to player?
+

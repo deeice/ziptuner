@@ -75,6 +75,9 @@ char ext[32] = ".m3u";
 
 FILE *fd;
 char buff[256];
+
+char *play = NULL; // mpg123tty4
+int choice = 0;
 	
 /************************************************/
 static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp) {
@@ -127,7 +130,7 @@ int get_url(char *url) {
   struct MemoryStruct chunk;
   chunk.memory = (char *)malloc(1); /* will be grown as needed by WriteMemoryCallback() */ 
   chunk.size = 0; /* no data at this point */
-  printf("\nURL = %s\n\n", url);
+  //printf("\nURL = %s\n\n", url);
   curl_global_init(CURL_GLOBAL_ALL);
   curl_handle = curl_easy_init();
   curl_easy_setopt(curl_handle, CURLOPT_URL,url);
@@ -151,11 +154,15 @@ int get_url(char *url) {
     } else {
       int i = 0;
       int n = cJSON_GetArraySize(json);
-      printf("found %d tags\n",n);
+      //printf("found %d tags\n",n);
 
       cmd = malloc(chunk.size + 128); // Add extra space for "dialog..."
-      sprintf(cmd, "dialog --clear --title \"Pick a station\" --menu ");
-      sprintf(cmd+strlen(cmd),"\"%d Stations matching <%s>\"", n, tags);
+      sprintf(cmd, "dialog --clear --title \"Pick a station\" ");
+      if (play) {
+	  sprintf(cmd+strlen(cmd),"--ok-label \"Save\" ");
+	  sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Play\" ");
+      }
+      sprintf(cmd+strlen(cmd),"--menu \"%d Stations matching <%s>\"", n, tags);
       sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
 
       for (i=0; i<n; i++){
@@ -163,7 +170,7 @@ int get_url(char *url) {
 	char *id = cJSON_GetObjectItem(item,"id")->valuestring;
 	char *name = cJSON_GetObjectItem(item,"name")->valuestring;
 	char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
-	printf("% 3d %s\n",i,name);
+	//printf("% 3d %s\n",i,name);
 	strcat(cmd," ");
 	sprintf(cmd+strlen(cmd),"%d",i+1);
 	//strcat(cmd,"\"");
@@ -173,7 +180,8 @@ int get_url(char *url) {
 	strcat(cmd,name);
 	strcat(cmd,"\"");
       }
-      strcat(cmd, " 2>tempfile");
+      strcat(cmd, " 2>/tmp/ziptuner.tmp");
+#if 0      
       if ((fd = fopen("response.json", "w"))){
 	fprintf(fd,"found %d tags\n",n);
 	fprintf(fd, chunk.memory); 
@@ -182,23 +190,52 @@ int get_url(char *url) {
 	fprintf(fd,"\n");
 	fclose(fd);
       }
+#endif
       if (n <= 0) {
 	retval = 0;
       }
       else {
-	printf("\n%s\n", cmd);
-	system ( cmd ) ;
-	if (!(fd = fopen("tempfile", "r")))
+	//printf("\n%s\n", cmd);
+	choice = system ( cmd ) ;
+	//printf("dialog => %d, 0x%08x\n",choice,choice);
+	// Seems to return dialog return value shifted left 8 | signal id in the low 7 bits
+	// And bit 7 tells if there was a coredump.
+	// Or -1 (32 bits) if system failed.
+	// So really anything but 0=ok or 0x300=play means cancel/die (maybe 0x200=help?)
+	//exit(0);
+	if (!(fd = fopen("/tmp/ziptuner.tmp", "r")))
 	{
-	  //remove("tempfile");
+	  //remove("/tmp/ziptuner.tmp");
 	  //return NULL;
 	}
 	buff[0] = 0;
 	while (fgets(buff, 255, fd) != NULL)
 	  {}
 	fclose(fd);
-	printf("\n\n%s\n",buff);
-	//remove("tempfile");
+	//printf("\n\n%s\n",buff);
+	//remove("/tmp/ziptuner.tmp");
+
+	if (choice == 0x300) {
+	  if (1 == sscanf(buff, "%d", &i)){
+	    cJSON *item = cJSON_GetArrayItem(json, i-1);
+	    char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
+	    if (!(strstr(item_url,".m3u") || strstr(item_url,".pls"))) {
+	      char *p = strstr(play,"-@");
+	      //printf ("Skipping playlist arg in <%s>\n", play);
+	      if (p)    // If its a stream and not a playlist then...
+		*p = 0; // remove any mpg123 arg that says its a playlist.
+	    }
+	    //printf ("\n%s \"%s\"\n", play, item_url);
+            cmd = malloc(strlen(play) + strlen(item_url) + 128); 
+            sprintf(cmd, "\n%s \"%s\" &\n", play, item_url);
+            system ( cmd ) ;
+	  }
+	  else {
+	    //printf ("\nSkipping %s\n", play);
+	  }
+	  // exit (0);
+	}
+	else
 
 	if (1 == sscanf(buff, "%d", &i)){
 	  cJSON *item = cJSON_GetArrayItem(json, i-1);
@@ -207,14 +244,14 @@ int get_url(char *url) {
 	  char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
 	  //sprintf(url, "http://www.radio-browser.info/webservice/v2/pls/url/%s",id);
 	  sprintf(url, "http://www.radio-browser.info/webservice/v2/m3u/url/%s",id);
-	  
+#if 0	  
 	  /* DEBUG stuff.  Delete when fully functional */
 	  printf("%d: %s\n",i,url);
 	  if ((fd = fopen("id.url", "w"))){
 	    fprintf(fd, url); 
 	    fclose(fd);
 	  }
-	  
+#endif	  
 	  /* Start over */
 	  curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
 	  free(chunk.memory);
@@ -238,13 +275,13 @@ int get_url(char *url) {
 	    if (strstr(playlist, "did not find station")) {
 	      playlist = NULL;
 	      if(!strstr(item_url,".pls") && !strstr(item_url,".m3u")) {
-		printf("\nDid NOT find station.  Using item_url.\n");
+		//printf("\nDid NOT find station.  Using item_url.\n");
 		//sprintf(url,"[playlist]\nFile1=%s\n",item_url);
 		sprintf(url,"%s\n",item_url); // Just a link should work for m3u file...
 		playlist = url;
 	      }
 	      else {
-		printf("\nDid NOT find station.  Fetching item_url.\n");
+		//printf("\nDid NOT find station.  Fetching item_url.\n");
 		if (strstr(item_url,".pls")) 
 		  sprintf(ext, ".pls"); // item_url has .pls extension, so output should too.
 
@@ -265,7 +302,7 @@ int get_url(char *url) {
 		  fprintf(stderr, "curl_easy_perform() failed: %s\n",curl_easy_strerror(res));
 		}
 		else {
-		  printf("%d; %s\n",chunk.size,chunk.memory);
+		  //printf("%d; %s\n",chunk.size,chunk.memory);
 		  playlist = chunk.memory;
 		}
 	      }
@@ -276,31 +313,33 @@ int get_url(char *url) {
 		*s = '-'; // Quotes inside strings make for ugly filenames.
 	      for (s = strpbrk(name, " "); s; s = strpbrk(s, " "))
 		*s = '_'; // Remove spaces from filenames.
+              for (s=strpbrk(name,"'`;()&|\\/"); s; s=strpbrk(s,"'`;()&|\\/"))
+                  *s = '-'; // Remove other bad chars from filenames.
 
 	      // Loop through destinations and save the playlist
-	      printf("Loop through destfiles/dirs and save the playlist\n");
+	      //printf("Loop through destfiles/dirs and save the playlist\n");
 	      for (i=0; i < destnum; i++) {
 		struct stat path_stat;
 		int fileexists = (-1 != access(dest[i], F_OK));
 
 		destfile = dest[i];
-		printf("dest[%d] = %s (exists = %d)\n", i, destfile, fileexists);
+		//printf("dest[%d] = %s (exists = %d)\n", i, destfile, fileexists);
 
 		if (fileexists && (0 == stat(destfile, &path_stat)) && S_ISDIR(path_stat.st_mode)) { 
-		  printf("Found directory\n");
+		  //printf("Found directory\n");
 		  // If directory, create a new file.
 		  sprintf(buff, "%s/%s%s",destfile, name, ext);
 		  if (fd = fopen(buff, "w")){
 		    fprintf(fd, playlist); 
 		    fclose(fd);
 		  }
-		  printf("Make new file %s\n",buff);
+		  //printf("Make new file %s\n",buff);
 		}
 		else { // destfile is a file.  Append to it in proper format.
 		  char *p = playlist;
 		  
 		  if (fileexists) {// We must append, and maybe strip some things.
-		    printf("Append to file %s\n",destfile);
+		    //printf("Append to file %s\n",destfile);
 		    if (strstr(destfile,".m3u")) {
 		      if (!strcmp(ext, ".m3u")) {
 			//if (s = strstr(playlist,"#EXTM3U")) p = s+7;
@@ -319,12 +358,12 @@ int get_url(char *url) {
 		    }
 		  }
 		  else { // (FIXME)
-		    printf("Create file %s\n",destfile);
+		    //printf("Create file %s\n",destfile);
 		    // For now, just create new file and dump whatever format we got in it.
 		  }
-		  printf("Opening %s\n",destfile);
+		  //printf("Opening %s\n",destfile);
 		  if (fd = fopen(destfile, "a")){
-		    printf("Writing %s\n",p);
+		    //printf("Writing %s\n",p);
 		    fprintf(fd, p); 
 		    fclose(fd);
 		  }
@@ -339,7 +378,7 @@ int get_url(char *url) {
   if (cmd)
     free(cmd);
   if (0 == retval) {
-    printf("messagebox Got nothing\n");
+    //printf("messagebox Got nothing\n");
     cmd = cmd_out;
     sprintf(cmd, "dialog --clear --title \"Sorry.\" --msgbox \"None Found.\"");
     sprintf(cmd+strlen(cmd)," %d %d", 6, 20);
@@ -371,39 +410,44 @@ int main(int argc, char **argv){
     height = 23;
   //printf("W,H = (%d, %d)\n",width,height); exit(0);
  
-#if 0
+#if 1
+  //printf("processing(%d, %s)\n",argc,*argv);   
   /* Just in case I want more args later... */
-  while((--argc>0) && (**++argv=='-'))
+  for(--argc,++argv; (argc>0) && (**argv=='-'); --argc,++argv)
   {
-    char c;
-    int n;
-    //printf("processing(%d, %s)\n",argc,*argv); 
-    while(c=*++*argv) // Eat a bunch of one char commands after -.
+    char c = (*argv)[1];
+    switch(c)
     {
-      //printf("cmd %c (%d, %s)\n",c, argc,*argv); 
-      switch(c)
-      {
-      case 'x':
-	someboolvar ^= 1;
-	break;
-      case 'h':
-      case '?':
-	printf("Usage:  ziptuner -x [outputDir]\n"
-	       "\n"
-	       "Internet radio playlist fetcher.\n"
-	       "\n"
-	       "  x = someboolvar.\n"
-	       "\n"
-	       "eg:"
-	       "  ziptuner -x /my/playlist/folder\n"
-	       );
-	exit(0);
-      default:
-	// ignore it
-	break;
+    case 'p':
+      if (argc > 1){
+	play = *++argv;
+	argc--;
       }
+      break;
+    case 'h':
+    case '?':
+      printf("Usage:  ziptuner [-p playcommand] [destination] ...\n"
+	     "\n"
+	     "Internet radio playlist fetcher.\n"
+	     "\n"
+	     "  Use -p to specify a command for the play button.\n"
+	     "  Multiple destinations allowed.  Files or folders..\n"
+	     "\n"
+	     "eg:"
+	     "  ziptuner -p mpg123 ~/my/playlist/folder\n"
+	     );
+      exit(0);
+    default:
+      // ignore it
+      break;
     }
   }
+  if (argc > 0) {
+    destfile = argv[0];
+    dest = argv;
+    destnum = argc;
+  }
+  //printf("\nplay = <%s>\ndest = <%s>\nnum =%d [%d]\n",play,*dest,destnum, argc);
 #else
   // Save destnum=argc and destfile=argv.
   // Then we can loop at the end and save to multiple locations.
@@ -423,25 +467,25 @@ int main(int argc, char **argv){
   strcat(cmd," 3 \"Search by State\"");
   strcat(cmd," 4 \"Search by Language\"");
   strcat(cmd," 5 \"Search by Station Name\"");
-  strcat(cmd, " 2>tempfile");
+  strcat(cmd, " 2>/tmp/ziptuner.tmp");
 
-  printf("cmd = %s\n", cmd);
+  //printf("cmd = %s\n", cmd);
   //exit(0);
 
   system ( cmd ) ;
-  if (!(fd = fopen("tempfile", "r")))
+  if (!(fd = fopen("/tmp/ziptuner.tmp", "r")))
   {
-    //remove("tempfile");
+    //remove("/tmp/ziptuner.tmp");
     //return NULL;
   }
   buff[0] = 0;
   while (fgets(buff, 255, fd) != NULL)
     {}
   fclose(fd);
-  printf("\n\n%s\n",buff);
+  //printf("\n\n%s\n",buff);
 
   if (1 != sscanf(buff, "%d", &i))
-    exit(0); // tempfile is empty, so they hit cancel.  Pack up and go home.
+    exit(0); // /tmp/ziptuner.tmp is empty, so they hit cancel.  Pack up and go home.
   switch (i) {
   case 2:
     sprintf(cmd, "dialog --title \"Internet Radio Search by Country\" --clear --inputbox ");
@@ -464,21 +508,21 @@ int main(int argc, char **argv){
     sprintf(cmd, "dialog --title \"Internet Radio Search by Tag\" --clear --inputbox ");
     break;
   }
-  sprintf(cmd+strlen(cmd),"\"Search for:\" %d %d 2> tempfile", height-3, width-6);
+  sprintf(cmd+strlen(cmd),"\"Search for:\" %d %d 2> /tmp/ziptuner.tmp", height-3, width-6);
   system ( cmd ) ;
-  if (!(fd = fopen("tempfile", "r")))
+  if (!(fd = fopen("/tmp/ziptuner.tmp", "r")))
   {
-    //remove("tempfile");
+    //remove("/tmp/ziptuner.tmp");
     //return NULL;
   }
   buff[0] = 0;
   while (fgets(buff, 255, fd) != NULL)
     {}
   fclose(fd);
-  printf("\n\n%s\n",buff);
-  //remove("tempfile");
+  //printf("\n\n%s\n",buff);
+  //remove("/tmp/ziptuner.tmp");
   strcpy(tags, buff);
-  printf("tags = <%s>\n", tags);
+  //printf("tags = <%s>\n", tags);
   if (strlen(tags)) 
   {
     if (s = strpbrk(tags, "\r\n"))
@@ -496,14 +540,12 @@ int main(int argc, char **argv){
 	sprintf(tags, "");
 	goto retry;
       }
-    printf("All done!.\n");
     }
   }
   else {
-    // tempfile is empty, so they hit cancel.  Pack up and go home.
-    printf("tempfile is empty, so they hit cancel.\n");
+    // /tmp/ziptuner.tmp is empty, so they hit cancel.  Pack up and go home.
     goto retry;
   }
-  printf("W,H = (%d, %d)\n",width,height);
+  //printf("W,H = (%d, %d)\n",width,height);
   return 0;	          
 }
