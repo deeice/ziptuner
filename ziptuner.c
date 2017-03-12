@@ -410,7 +410,6 @@ int main(int argc, char **argv){
     height = 23;
   //printf("W,H = (%d, %d)\n",width,height); exit(0);
  
-#if 1
   //printf("processing(%d, %s)\n",argc,*argv);   
   /* Just in case I want more args later... */
   for(--argc,++argv; (argc>0) && (**argv=='-'); --argc,++argv)
@@ -448,20 +447,14 @@ int main(int argc, char **argv){
     destnum = argc;
   }
   //printf("\nplay = <%s>\ndest = <%s>\nnum =%d [%d]\n",play,*dest,destnum, argc);
-#else
-  // Save destnum=argc and destfile=argv.
-  // Then we can loop at the end and save to multiple locations.
-  if (argc > 1) {
-    destfile = argv[1];
-    dest = ++argv;
-    destnum = argc-1;
-  }
-#endif
 
  retry:
   sprintf(cmd, "dialog --clear --title \"Zippy Internet Radio Tuner\" --menu ");
   strcat(cmd,"\"Select Type of Search\"");
   sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-9);
+  if (-1 != access("ziptuner.url", F_OK)){
+      strcat(cmd," 0 \"Resume previous search\"");
+  }
   strcat(cmd," 1 \"Search by Tag\"");
   strcat(cmd," 2 \"Search by Country\"");
   strcat(cmd," 3 \"Search by State\"");
@@ -486,6 +479,23 @@ int main(int argc, char **argv){
 
   if (1 != sscanf(buff, "%d", &i))
     exit(0); // /tmp/ziptuner.tmp is empty, so they hit cancel.  Pack up and go home.
+
+  // Try to reuse prev search if selected option 0.
+  buff[0] = 0;
+  if (i == 0) {
+    if (i == 0) {
+      if (fd = fopen("ziptuner.url", "r")) {
+        while (fgets(buff, 255, fd) != NULL)
+          {}
+        fclose(fd);
+        if (strlen(buff)) {
+            strcpy(tags, buff);
+            strcpy(TAGS_URL, buff);
+        }
+      }
+    }
+  }
+  if (!strlen(buff)) {
   switch (i) {
   case 2:
     sprintf(cmd, "dialog --title \"Internet Radio Search by Country\" --clear --inputbox ");
@@ -509,25 +519,33 @@ int main(int argc, char **argv){
     break;
   }
   sprintf(cmd+strlen(cmd),"\"Search for:\" %d %d 2> /tmp/ziptuner.tmp", height-3, width-6);
+
   system ( cmd ) ;
-  if (!(fd = fopen("/tmp/ziptuner.tmp", "r")))
-  {
-    //remove("/tmp/ziptuner.tmp");
-    //return NULL;
-  }
+
   buff[0] = 0;
-  while (fgets(buff, 255, fd) != NULL)
-    {}
-  fclose(fd);
+  if (fd = fopen("/tmp/ziptuner.tmp", "r"))
+  {
+    while (fgets(buff, 255, fd) != NULL)
+      {}
+    fclose(fd);
+  }
   //printf("\n\n%s\n",buff);
   //remove("/tmp/ziptuner.tmp");
   strcpy(tags, buff);
   //printf("tags = <%s>\n", tags);
-  if (strlen(tags)) 
-  {
+  if (strlen(tags)) {
     if (s = strpbrk(tags, "\r\n"))
       *s = 0;
     strcat(TAGS_URL, tags);
+    // Save the station search url for re-use.
+    if (fd = fopen("ziptuner.url", "w")) {
+      fprintf(fd, "%s", TAGS_URL);
+      fclose(fd);
+    }
+  }
+  }
+
+  if (strlen(tags)) {
     // gen_tp();  
     get_int_ip();  // Works on zipit, but not laptop, so just set connection=1.
     int_connection=1; 
