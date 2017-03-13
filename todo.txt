@@ -1,18 +1,25 @@
 TODO:
 
 Save previous search url and add a "Resume Last Search" button on main list.
+     Done
+     
+Delay search url save until we know the search does NOT come up empty.
 
 Search by station name.
+     Done
 
 Add main menu options to fetch the lists of tags, states, countries...
 
 Handle non-mp3 formats.  Either make note of it on gui or add alt players.
+use --column-separator "~" --menu "" 6 0 0 "1" "aac ~ WXYZ all aac allways"
 
 Maybe multiselect stations instead of single select.
 
 Stay on station select screen if you hit play.
-
+     Done
+     
 Let play be the default instead of save?
+     Done
 
 Come up with a scheme to stop playing?  Send a bogus filename to player?
 
