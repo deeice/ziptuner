@@ -124,6 +124,7 @@ void get_int_ip() {
 /************************************************/
 int get_url(char *url) {
   int retval = 1;
+  int rerun = 1;
   CURL *curl_handle;
   CURLcode res;
   char *s, *playlist;
@@ -155,12 +156,11 @@ int get_url(char *url) {
       int i = 0;
       int n = cJSON_GetArraySize(json);
       //printf("found %d tags\n",n);
-
       cmd = malloc(chunk.size + 128); // Add extra space for "dialog..."
       sprintf(cmd, "dialog --clear --title \"Pick a station\" ");
       if (play) {
-	  sprintf(cmd+strlen(cmd),"--ok-label \"Save\" ");
-	  sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Play\" ");
+	  sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
+	  sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Save\" ");
       }
       sprintf(cmd+strlen(cmd),"--menu \"%d Stations matching <%s>\"", n, tags);
       sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
@@ -191,34 +191,31 @@ int get_url(char *url) {
 	fclose(fd);
       }
 #endif
-      if (n <= 0) {
+      if (n <= 0)
 	retval = 0;
-      }
-      else {
+      else while (rerun) {
+	rerun = 0; // Only rerun if we hit play.
 	//printf("\n%s\n", cmd);
 	choice = system ( cmd ) ;
 	//printf("dialog => %d, 0x%08x\n",choice,choice);
 	// Seems to return dialog return value shifted left 8 | signal id in the low 7 bits
 	// And bit 7 tells if there was a coredump.
 	// Or -1 (32 bits) if system failed.
-	// So really anything but 0=ok or 0x300=play means cancel/die (maybe 0x200=help?)
-	//exit(0);
-	if (!(fd = fopen("/tmp/ziptuner.tmp", "r")))
-	{
-	  //remove("/tmp/ziptuner.tmp");
-	  //return NULL;
-	}
+	// So really anything but 0=ok or 0x300=xtra means cancel/die (maybe 0x200=help?)
 	buff[0] = 0;
-	while (fgets(buff, 255, fd) != NULL)
-	  {}
-	fclose(fd);
-	//printf("\n\n%s\n",buff);
-	//remove("/tmp/ziptuner.tmp");
+	if (fd = fopen("/tmp/ziptuner.tmp", "r")) {
+  	  while (fgets(buff, 255, fd) != NULL)
+	    {}
+ 	  fclose(fd);
+	}
+	if (1 == sscanf(buff, "%d", &i)){
+	  cJSON *item = cJSON_GetArrayItem(json, i-1);
+	  char *id = cJSON_GetObjectItem(item,"id")->valuestring;
+	  char *name = cJSON_GetObjectItem(item,"name")->valuestring;
+	  char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
 
-	if (choice == 0x300) {
-	  if (1 == sscanf(buff, "%d", &i)){
-	    cJSON *item = cJSON_GetArrayItem(json, i-1);
-	    char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
+	  /* If we hit play, play the playlist in the background and rerun the list. */
+          if (play && (choice == 0)) {
 	    if (!(strstr(item_url,".m3u") || strstr(item_url,".pls"))) {
 	      char *p = strstr(play,"-@");
 	      //printf ("Skipping playlist arg in <%s>\n", play);
@@ -226,33 +223,15 @@ int get_url(char *url) {
 		*p = 0; // remove any mpg123 arg that says its a playlist.
 	    }
 	    //printf ("\n%s \"%s\"\n", play, item_url);
-            cmd = malloc(strlen(play) + strlen(item_url) + 128); 
-            sprintf(cmd, "\n%s \"%s\" &\n", play, item_url);
-            system ( cmd ) ;
+            sprintf(buff, "\n%s \"%s\" &\n", play, item_url);
+            system ( buff ) ;
+	    rerun = 1;
+	    continue;
 	  }
-	  else {
-	    //printf ("\nSkipping %s\n", play);
-	  }
-	  // exit (0);
-	}
-	else
 
-	if (1 == sscanf(buff, "%d", &i)){
-	  cJSON *item = cJSON_GetArrayItem(json, i-1);
-	  char *id = cJSON_GetObjectItem(item,"id")->valuestring;
-	  char *name = cJSON_GetObjectItem(item,"name")->valuestring;
-	  char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
-	  //sprintf(url, "http://www.radio-browser.info/webservice/v2/pls/url/%s",id);
+	  /* Did NOT hit play, so we need to fetch the playlist and save it. */
 	  sprintf(url, "http://www.radio-browser.info/webservice/v2/m3u/url/%s",id);
-#if 0	  
-	  /* DEBUG stuff.  Delete when fully functional */
-	  printf("%d: %s\n",i,url);
-	  if ((fd = fopen("id.url", "w"))){
-	    fprintf(fd, url); 
-	    fclose(fd);
-	  }
-#endif	  
-	  /* Start over */
+	  /* Start over with curl */
 	  curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
 	  free(chunk.memory);
 	  chunk.memory = (char *)malloc(1);
@@ -389,6 +368,8 @@ int get_url(char *url) {
   chunk.size = 0;
   /* we're done with libcurl, so clean it up */ 
   curl_global_cleanup();
+
+  return retval;
 }
 
 /************************************************/
@@ -489,8 +470,10 @@ int main(int argc, char **argv){
           {}
         fclose(fd);
         if (strlen(buff)) {
-            strcpy(tags, buff);
-            strcpy(TAGS_URL, buff);
+	  char *p = strrchr(buff, '/');
+	  if (p) strcpy(tags, ++p);
+	  else strcpy(tags, "previous search");
+	  strcpy(TAGS_URL, buff);
         }
       }
     }
