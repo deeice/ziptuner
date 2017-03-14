@@ -24,3 +24,11 @@ Let play be the default instead of save?
 
 Come up with a scheme to stop playing?  Send a bogus filename to player?
 
+Add a help dialog.  See flash script for example.
+
+Maybe abbreviate codec to single letter like M,A,O for narrow screen.
+
+Add bitrate column if the screen is wide enough.
+
+Try mplayer for play.  See if I need any code changes for that.
+
