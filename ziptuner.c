@@ -23,13 +23,13 @@
 
 #define CMD_OUT_MAX 1024
 
-char TAGS_URL[512] = 
-  "http://www.radio-browser.info/webservice/json/stations/bytag/";
 
 int  destnum = 1;
 char *destfile = ".";
 char **dest = &destfile;
-char tags[512] = "";
+char srch_url[512] = "";
+char srch_str[512] = "";
+char pls_url[512] = "";
 
 /*
 First get a list to choose from.
@@ -122,7 +122,7 @@ void get_int_ip() {
 
 
 /************************************************/
-int get_url(char *url) {
+int get_url(char *the_url) {
   int retval = 1;
   int rerun = 1;
   CURL *curl_handle;
@@ -134,7 +134,7 @@ int get_url(char *url) {
   //printf("\nURL = %s\n\n", url);
   curl_global_init(CURL_GLOBAL_ALL);
   curl_handle = curl_easy_init();
-  curl_easy_setopt(curl_handle, CURLOPT_URL,url);
+  curl_easy_setopt(curl_handle, CURLOPT_URL,the_url);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
   curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
@@ -162,7 +162,7 @@ int get_url(char *url) {
 	  sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
 	  sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Save\" ");
       }
-      sprintf(cmd+strlen(cmd),"--menu \"%d Stations matching <%s>\"", n, tags);
+      sprintf(cmd+strlen(cmd),"--menu \"%d Stations matching <%s>\"", n, srch_str);
       sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
 
       for (i=0; i<n; i++){
@@ -230,7 +230,7 @@ int get_url(char *url) {
 	  }
 
 	  /* Did NOT hit play, so we need to fetch the playlist and save it. */
-	  sprintf(url, "http://www.radio-browser.info/webservice/v2/m3u/url/%s",id);
+	  sprintf(pls_url, "http://www.radio-browser.info/webservice/v2/m3u/url/%s",id);
 	  /* Start over with curl */
 	  curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
 	  free(chunk.memory);
@@ -239,7 +239,7 @@ int get_url(char *url) {
 
 	  curl_global_init(CURL_GLOBAL_ALL);
 	  curl_handle = curl_easy_init();
-	  curl_easy_setopt(curl_handle, CURLOPT_URL,url);
+	  curl_easy_setopt(curl_handle, CURLOPT_URL,pls_url);
 	  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
 	  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
 	  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
@@ -256,8 +256,8 @@ int get_url(char *url) {
 	      if(!strstr(item_url,".pls") && !strstr(item_url,".m3u")) {
 		//printf("\nDid NOT find station.  Using item_url.\n");
 		//sprintf(url,"[playlist]\nFile1=%s\n",item_url);
-		sprintf(url,"%s\n",item_url); // Just a link should work for m3u file...
-		playlist = url;
+		sprintf(pls_url,"%s\n",item_url); // Just a link should work for m3u file...
+		playlist = pls_url;
 	      }
 	      else {
 		//printf("\nDid NOT find station.  Fetching item_url.\n");
@@ -430,6 +430,7 @@ int main(int argc, char **argv){
   //printf("\nplay = <%s>\ndest = <%s>\nnum =%d [%d]\n",play,*dest,destnum, argc);
 
  retry:
+  sprintf(srch_url, "http://www.radio-browser.info/webservice/json/stations/");
   sprintf(cmd, "dialog --clear --title \"Zippy Internet Radio Tuner\" --menu ");
   strcat(cmd,"\"Select Type of Search\"");
   sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-9);
@@ -471,9 +472,9 @@ int main(int argc, char **argv){
         fclose(fd);
         if (strlen(buff)) {
 	  char *p = strrchr(buff, '/');
-	  if (p) strcpy(tags, ++p);
-	  else strcpy(tags, "previous search");
-	  strcpy(TAGS_URL, buff);
+	  if (p) strcpy(srch_str, ++p);
+	  else strcpy(srch_str, "previous search");
+	  strcpy(srch_url, buff);
         }
       }
     }
@@ -482,23 +483,24 @@ int main(int argc, char **argv){
   switch (i) {
   case 2:
     sprintf(cmd, "dialog --title \"Internet Radio Search by Country\" --clear --inputbox ");
-    sprintf(TAGS_URL, "http://www.radio-browser.info/webservice/json/stations/bycountry/");
+    strcat(srch_url, "bycountry/");
     break;
   case 3:
     sprintf(cmd, "dialog --title \"Internet Radio Search by State\" --clear --inputbox ");
-    sprintf(TAGS_URL, "http://www.radio-browser.info/webservice/json/stations/bystate/");
+    strcat(srch_url, "bystate/");
     break;
   case 4:
     sprintf(cmd, "dialog --title \"Internet Radio Search by Language\" --clear --inputbox ");
-    sprintf(TAGS_URL, "http://www.radio-browser.info/webservice/json/stations/bylanguage/");
+    strcat(srch_url, "bylanguage/");
     break;
   case 5:
     sprintf(cmd, "dialog --title \"Internet Radio Search by Station Name\" --clear --inputbox ");
-    sprintf(TAGS_URL, "http://www.radio-browser.info/webservice/json/stations/byname/");
+    strcat(srch_url, "byname/");
     break;
   case 1:
   default:
     sprintf(cmd, "dialog --title \"Internet Radio Search by Tag\" --clear --inputbox ");
+    strcat(srch_url, "bytag/");
     break;
   }
   sprintf(cmd+strlen(cmd),"\"Search for:\" %d %d 2> /tmp/ziptuner.tmp", height-3, width-6);
@@ -514,33 +516,41 @@ int main(int argc, char **argv){
   }
   //printf("\n\n%s\n",buff);
   //remove("/tmp/ziptuner.tmp");
-  strcpy(tags, buff);
-  //printf("tags = <%s>\n", tags);
-  if (strlen(tags)) {
-    if (s = strpbrk(tags, "\r\n"))
+  strcpy(srch_str, buff);
+  //printf("tags = <%s>\n", srch_str);
+  if (strlen(srch_str)) {
+    if (s = strpbrk(srch_str, "\r\n"))
       *s = 0;
-    strcat(TAGS_URL, tags);
+    strcat(srch_url, srch_str);
+#if 0 /* NOT the best place to save search url, dont know if its good yet. */
     // Save the station search url for re-use.
     if (fd = fopen("ziptuner.url", "w")) {
-      fprintf(fd, "%s", TAGS_URL);
+      fprintf(fd, "%s", srch_url);
       fclose(fd);
     }
+#endif
   }
   }
 
-  if (strlen(tags)) {
+  if (strlen(srch_str)) {
     // gen_tp();  
     get_int_ip();  // Works on zipit, but not laptop, so just set connection=1.
     int_connection=1; 
     //signal (SIGALRM, catch_alarm);
     if (int_connection) {
-      if (!get_url(TAGS_URL)) {
+      if (!get_url(srch_url)) {
 	// I'm still not sure this really works, but give it a shot for now.
-	*cmd = cmd_out;
-	sprintf(TAGS_URL, "http://www.radio-browser.info/webservice/json/stations/bytag/");
-	sprintf(tags, "");
+	cmd = cmd_out;
+	//sprintf(srch_str, "");
 	goto retry;
       }
+#if 1 /* This is the place to save search url, but is srch_url still good? */
+      // Save the station search url for re-use.
+      else if (fd = fopen("ziptuner.url", "w")) {
+	fprintf(fd, "%s", srch_url);
+	fclose(fd);
+      }
+#endif
     }
   }
   else {
