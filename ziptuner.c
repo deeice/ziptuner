@@ -170,16 +170,28 @@ int get_url(char *the_url) {
 	char *id = cJSON_GetObjectItem(item,"id")->valuestring;
 	char *name = cJSON_GetObjectItem(item,"name")->valuestring;
 	char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
+	char *codec = cJSON_GetObjectItem(item,"codec")->valuestring;
+	char *bitrate = cJSON_GetObjectItem(item,"bitrate")->valuestring;
 	//printf("% 3d %s\n",i,name);
 	strcat(cmd," ");
 	sprintf(cmd+strlen(cmd),"%d",i+1);
 	//strcat(cmd,"\"");
 	strcat(cmd," \"");
+#ifndef NOCODEC
+	int j;
+	for (j=0; j<strlen(codec); j++)
+	  codec[j] = tolower(codec[j]);
+	if (strcmp(bitrate, "0"))
+	  sprintf(cmd+strlen(cmd),"% 4s % 3s . ",codec,bitrate);
+	else
+	  sprintf(cmd+strlen(cmd),"% 4s     . ",codec);
+#endif
 	for (s = strpbrk(name, "\""); s; s = strpbrk(s, "\""))
 	  *s = '-'; // Quotes inside strings confuse Dialog.
 	strcat(cmd,name);
 	strcat(cmd,"\"");
       }
+      //printf("\n\%s\n",cmd); exit (0);
       strcat(cmd, " 2>/tmp/ziptuner.tmp");
 #if 0      
       if ((fd = fopen("response.json", "w"))){
@@ -225,6 +237,12 @@ int get_url(char *the_url) {
 	    //printf ("\n%s \"%s\"\n", play, item_url);
             sprintf(buff, "\n%s \"%s\" &\n", play, item_url);
             system ( buff ) ;
+#if 0
+	    if (fd = fopen("foo.url", "w")){
+	      fprintf(fd, buff); 
+	      fclose(fd);
+	    }
+#endif
 	    rerun = 1;
 	    continue;
 	  }
@@ -414,7 +432,7 @@ int main(int argc, char **argv){
 	     "  Multiple destinations allowed.  Files or folders..\n"
 	     "\n"
 	     "eg:"
-	     "  ziptuner -p mpg123 ~/my/playlist/folder\n"
+	     "  ziptuner -p \"mpg123 -@ \" ~/my/playlist/folder\n"
 	     );
       exit(0);
     default:
