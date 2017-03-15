@@ -77,6 +77,7 @@ FILE *fd;
 char buff[256];
 
 char *play = NULL; // mpg123tty4
+char *stop = NULL; // killall mpg123; killall mplayer
 int choice = 0;
 	
 /************************************************/
@@ -162,6 +163,9 @@ int get_url(char *the_url) {
 	  sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
 	  sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Save\" ");
       }
+      if (stop) { // Use Help button for Stop.
+	sprintf(cmd+strlen(cmd),"--help-button --help-label \"Stop\" ");
+      }
       sprintf(cmd+strlen(cmd),"--menu \"%d Stations matching <%s>\"", n, srch_str);
       sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
 
@@ -206,7 +210,7 @@ int get_url(char *the_url) {
       if (n <= 0)
 	retval = 0;
       else while (rerun) {
-	rerun = 0; // Only rerun if we hit play.
+	rerun = 0; // Only rerun if we hit play or stop.
 	//printf("\n%s\n", cmd);
 	choice = system ( cmd ) ;
 	//printf("dialog => %d, 0x%08x\n",choice,choice);
@@ -214,6 +218,12 @@ int get_url(char *the_url) {
 	// And bit 7 tells if there was a coredump.
 	// Or -1 (32 bits) if system failed.
 	// So really anything but 0=ok or 0x300=xtra means cancel/die (maybe 0x200=help?)
+	if (stop && (choice == 0x200)) {
+	  system ( stop ) ;
+	  //printf("\n\n%s\n",stop);exit(0);
+	  rerun = 1;
+	  continue;
+	  }
 	buff[0] = 0;
 	if (fd = fopen("/tmp/ziptuner.tmp", "r")) {
   	  while (fgets(buff, 255, fd) != NULL)
@@ -229,16 +239,18 @@ int get_url(char *the_url) {
 	  /* If we hit play, play the playlist in the background and rerun the list. */
           if (play && (choice == 0)) {
 	    if (!(strstr(item_url,".m3u") || strstr(item_url,".pls"))) {
-	      char *p = strstr(play,"-@");
-	      //printf ("Skipping playlist arg in <%s>\n", play);
-	      if (p)    // If its a stream and not a playlist then...
-		*p = 0; // remove any mpg123 arg that says its a playlist.
+	      int j; // If its a stream and not a playlist then...
+	      char *p = strstr(play,"-@");      // remove mpg123 arg that says its a playlist.
+	      if (p) 
+		for (j=0; j<2; j++) p[j] = ' '; 
+	      if (p = strstr(play,"-playlist")) // remove mplayer arg that says its a playlist.
+		for (j=0; j<9; j++) p[j] = ' '; 
 	    }
 	    //printf ("\n%s \"%s\"\n", play, item_url);
             sprintf(buff, "\n%s \"%s\" &\n", play, item_url);
             system ( buff ) ;
 #if 0
-	    if (fd = fopen("foo.url", "w")){
+	    if (fd = fopen("play.url", "w")){
 	      fprintf(fd, buff); 
 	      fclose(fd);
 	    }
@@ -422,17 +434,24 @@ int main(int argc, char **argv){
 	argc--;
       }
       break;
+    case 's':
+      if (argc > 1){
+	stop = *++argv;
+	argc--;
+      }
+      break;
     case 'h':
     case '?':
-      printf("Usage:  ziptuner [-p playcommand] [destination] ...\n"
+      printf("\n-- ziptuner -- internet radio playlist fetcher.\n"
+	     "\nUsage:  \n"
+	     "ziptuner [-p command] [-s command] [destination] ...\n"
 	     "\n"
-	     "Internet radio playlist fetcher.\n"
-	     "\n"
-	     "  Use -p to specify a command for the play button.\n"
-	     "  Multiple destinations allowed.  Files or folders..\n"
+	     "  -p sets a command for the play button.\n"
+	     "  -s sets a command for the stop button.\n"
+	     "  Multiple destinations allowed (files or folders)\n"
 	     "\n"
 	     "eg:"
-	     "  ziptuner -p \"mpg123 -@ \" ~/my/playlist/folder\n"
+	     "  ziptuner -p \"mpg123 -@ \" ~/my/playlist/folder\n\n"
 	     );
       exit(0);
     default:
@@ -449,8 +468,12 @@ int main(int argc, char **argv){
 
  retry:
   sprintf(srch_url, "http://www.radio-browser.info/webservice/json/stations/");
-  sprintf(cmd, "dialog --clear --title \"Zippy Internet Radio Tuner\" --menu ");
-  strcat(cmd,"\"Select Type of Search\"");
+  sprintf(cmd, "dialog --clear --title \"Zippy Internet Radio Tuner\" ");
+  if (stop) { // Use Help button for Stop, else we must swap Extra,Cancel buttons.
+    sprintf(cmd+strlen(cmd),"--help-button --help-label \"Stop\" ");
+    //sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Stop\" ");
+  }
+  strcat(cmd,"--menu \"Select Type of Search\"");
   sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-9);
   if (-1 != access("ziptuner.url", F_OK)){
       strcat(cmd," 0 \"Resume previous search\"");
@@ -465,7 +488,14 @@ int main(int argc, char **argv){
   //printf("cmd = %s\n", cmd);
   //exit(0);
 
-  system ( cmd ) ;
+  choice = system ( cmd ) ;
+  //if (stop && (choice == 0x300)) {
+  if (stop && (choice == 0x200)) {
+    system ( stop ) ;
+    printf("\n\n%s\n",stop);
+    exit(0);
+  }
+
   if (!(fd = fopen("/tmp/ziptuner.tmp", "r")))
   {
     //remove("/tmp/ziptuner.tmp");
