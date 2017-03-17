@@ -1,0 +1,10 @@
+#/bin/sh
+
+# Cleanup any old mp3 players first.
+killall mplayer
+deallocvt
+openvt -- mplayer "$@"
+
+# Give mplayer time to open tmp file
+# before links deletes it.
+sleep 1
