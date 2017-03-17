@@ -157,7 +157,7 @@ int get_url(char *the_url) {
       int i = 0;
       int n = cJSON_GetArraySize(json);
       //printf("found %d tags\n",n);
-      cmd = malloc(chunk.size + 128); // Add extra space for "dialog..."
+      cmd = malloc(chunk.size + strlen(srch_str) + 256); // extra space for "dialog..."
       sprintf(cmd, "dialog --clear --title \"Pick a station\" ");
       if (play) {
 	  sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
