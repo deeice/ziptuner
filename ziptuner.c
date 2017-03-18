@@ -78,6 +78,9 @@ char buff[256];
 
 char *play = NULL; // mpg123tty4
 char *stop = NULL; // killall mpg123; killall mplayer
+char *codecs[16];
+char *players[16];
+int np = 0;
 int choice = 0;
 	
 /************************************************/
@@ -150,12 +153,14 @@ int get_url(char *the_url) {
   }
   else {
     cJSON *json = cJSON_Parse(chunk.memory); 
+    int n = 0;
     //printf("%s\n",chunk.memory);
-    if (!json) {
-     printf("Error before: [%s]\n",cJSON_GetErrorPtr());
-    } else {
+    if (json) 
+      n = cJSON_GetArraySize(json);
+    if (n <= 0)
+      retval = 0;
+    else {
       int i = 0;
-      int n = cJSON_GetArraySize(json);
       //printf("found %d tags\n",n);
       cmd = malloc(chunk.size + strlen(srch_str) + 256); // extra space for "dialog..."
       sprintf(cmd, "dialog --clear --title \"Pick a station\" ");
@@ -207,9 +212,7 @@ int get_url(char *the_url) {
 	fclose(fd);
       }
 #endif
-      if (n <= 0)
-	retval = 0;
-      else while (rerun) {
+      while (rerun) {
 	rerun = 0; // Only rerun if we hit play or stop.
 	//printf("\n%s\n", cmd);
 	choice = system ( cmd ) ;
@@ -235,19 +238,33 @@ int get_url(char *the_url) {
 	  char *id = cJSON_GetObjectItem(item,"id")->valuestring;
 	  char *name = cJSON_GetObjectItem(item,"name")->valuestring;
 	  char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
-
+	  char *codec = cJSON_GetObjectItem(item,"codec")->valuestring;
 	  /* If we hit play, play the playlist in the background and rerun the list. */
           if (play && (choice == 0)) {
+	    int j;
+	    char *playcmd = play;
+	    for (j=0; j<strlen(codec); j++)
+	      codec[j] = tolower(codec[j]);
+	    // Do strncmp on codecs so aac can cover both aac and aac+
+	    // Also strncmp("", s, 0) will  match anything so we can have a fallback codec.
+	    for (j=0; j<np; j++) { // look for a codec match in the list of players.
+	      if (!strncmp(codecs[j], codec, strlen(codecs[j]))){
+		playcmd = players[j];
+		break;
+	      }
+	    }
+	    strcpy(buff, playcmd);
+	    playcmd = buff;
+	    // If its a stream and not a playlist then...
 	    if (!(strstr(item_url,".m3u") || strstr(item_url,".pls"))) {
-	      int j; // If its a stream and not a playlist then...
-	      char *p = strstr(play,"-@");      // remove mpg123 arg that says its a playlist.
+	      char *p = strstr(playcmd,"-@");      // remove mpg123 arg that says its a playlist.
 	      if (p) 
 		for (j=0; j<2; j++) p[j] = ' '; 
-	      if (p = strstr(play,"-playlist")) // remove mplayer arg that says its a playlist.
+	      if (p = strstr(playcmd,"-playlist")) // remove mplayer arg that says its a playlist.
 		for (j=0; j<9; j++) p[j] = ' '; 
 	    }
-	    //printf ("\n%s \"%s\"\n", play, item_url);
-            sprintf(buff, "\n%s \"%s\" &\n", play, item_url);
+	    //printf ("\n%s \"%s\"\n", playcmd, item_url);
+            sprintf(buff+strlen(buff), " \"%s\" &", item_url);
             system ( buff ) ;
 #if 0
 	    if (fd = fopen("play.url", "w")){
@@ -426,7 +443,20 @@ int main(int argc, char **argv){
   for(--argc,++argv; (argc>0) && (**argv=='-'); --argc,++argv)
   {
     char c = (*argv)[1];
-    switch(c)
+    if (strlen(*argv) > 2) {
+      if (argc > 1){
+	if (np < 15){
+	  int j;
+	  codecs[np] = (*argv)+1;
+	  for (j=0; j<strlen(codecs[np]); j++)
+	    codecs[np][j] = tolower(codecs[np][j]);
+	  players[np] = *++argv;
+	  np++;
+	}
+	argc--;
+      }
+    } 
+    else switch(c)
     {
     case 'p':
       if (argc > 1){
@@ -465,6 +495,16 @@ int main(int argc, char **argv){
     destnum = argc;
   }
   //printf("\nplay = <%s>\ndest = <%s>\nnum =%d [%d]\n",play,*dest,destnum, argc);
+
+  // Now I should put play on the end of the players list with a "" codec, and do np++
+  if (play){
+    codecs[np] = ""; // blank codec matches all for fallback.
+    players[np++] = play;
+  }
+  else
+    play = players[np];
+  /* for (i=0; i<np; i++) */
+  /*   printf("Codec=<%s> Playcmd=<%s>\n", codecs[i], players[i]); */
 
  retry:
   sprintf(srch_url, "http://www.radio-browser.info/webservice/json/stations/");
