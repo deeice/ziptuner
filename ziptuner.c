@@ -265,7 +265,9 @@ int get_url(char *the_url) {
 	    }
 	    //printf ("\n%s \"%s\"\n", playcmd, item_url);
             sprintf(buff+strlen(buff), " \"%s\" &", item_url);
-            system ( buff ) ;
+	    if (stop)
+	      system ( stop ); // This lets us kill any player, if multiple available.
+            system ( buff );
 #if 0
 	    if (fd = fopen("play.url", "w")){
 	      fprintf(fd, buff); 
