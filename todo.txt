@@ -12,7 +12,7 @@ Search by station name.
 Add main menu options to fetch the lists of tags, states, countries...
 
 Handle non-mp3 formats.  Either make note of it on gui or add alt players.
-use --column-separator "~" --menu "" 6 0 0 "1" "aac ~ WXYZ all aac allways"
+     Done
 
 Maybe multiselect stations instead of single select.
 
@@ -23,12 +23,17 @@ Let play be the default instead of save?
      Done
 
 Come up with a scheme to stop playing?  Send a bogus filename to player?
+     Done
 
-Add a help dialog.  See flash script for example.
+Add a help dialog option on main menu.  See flash script for example.
+     Not likely.  Document cmd line args in Readme.
 
 Maybe abbreviate codec to single letter like M,A,O for narrow screen.
+     Not needed
 
 Add bitrate column if the screen is wide enough.
+     Done
 
 Try mplayer for play.  See if I need any code changes for that.
+     Done
 
