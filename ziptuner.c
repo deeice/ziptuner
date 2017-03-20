@@ -82,6 +82,7 @@ char *codecs[16];
 char *players[16];
 int np = 0;
 int choice = 0;
+int U2L = 0;
 	
 /************************************************/
 static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp) {
@@ -124,6 +125,18 @@ void get_int_ip() {
  }
 }
 
+
+/************************************************/
+char *utf8tolatin(char *s) {
+  char *p=s;
+  for (; *s; s++) {
+    if (((*s & 0xFC) == 0xC0) && ((*(s+1) & 0xC0) == 0x80))
+      *p++ = ((*s & 0x03) << 6) | (*++s & 0x3F);
+    else 
+      *p++ = *s;
+  }
+  *p = 0;
+}
 
 /************************************************/
 int get_url(char *the_url) {
@@ -190,6 +203,8 @@ int get_url(char *the_url) {
 	int j;
 	for (j=0; j<strlen(codec); j++)
 	  codec[j] = tolower(codec[j]);
+	if (!strcmp(codec, "unknown"))
+	  codec[0] = 0;
 	if (strcmp(bitrate, "0"))
 	  sprintf(cmd+strlen(cmd),"% 4s % 3s . ",codec,bitrate);
 	else
@@ -197,6 +212,18 @@ int get_url(char *the_url) {
 #endif
 	for (s = strpbrk(name, "\""); s; s = strpbrk(s, "\""))
 	  *s = '-'; // Quotes inside strings confuse Dialog.
+	if (U2L) {
+#if 0
+	  if (fd = fopen("utf2lat.txt", "a")){
+	    fprintf(fd, "%s\n",name); 
+	    utf8tolatin(name);
+	    fprintf(fd, "%s\n",name); 
+	    fclose(fd);
+	  }
+	  else 
+#endif
+	    utf8tolatin(name);
+	}
 	strcat(cmd,name);
 	strcat(cmd,"\"");
       }
@@ -336,7 +363,8 @@ int get_url(char *the_url) {
 	      }
 	    }
 	    if (playlist){ // Fix the filename and then save the playlist (if we got one).
-
+	      if (U2L)
+		utf8tolatin(name);
 	      for (s = strpbrk(name, "\""); s; s = strpbrk(s, "\""))
 		*s = '-'; // Quotes inside strings make for ugly filenames.
 	      for (s = strpbrk(name, " "); s; s = strpbrk(s, " "))
@@ -402,7 +430,10 @@ int get_url(char *the_url) {
 	}
       }
     }
+    if (json) 
+      cJSON_Delete(json);
   }
+
   if (cmd)
     free(cmd);
   if (0 == retval) {
@@ -471,6 +502,9 @@ int main(int argc, char **argv){
 	stop = *++argv;
 	argc--;
       }
+      break;
+    case 'u':
+      U2L =1;
       break;
     case 'h':
     case '?':
