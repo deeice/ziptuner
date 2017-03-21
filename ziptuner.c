@@ -83,6 +83,7 @@ char *players[16];
 int np = 0;
 int choice = 0;
 int U2L = 0;
+int previtem = 0;
 	
 /************************************************/
 static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp) {
@@ -176,7 +177,9 @@ int get_url(char *the_url) {
       int i = 0;
       //printf("found %d tags\n",n);
       cmd = malloc(chunk.size + strlen(srch_str) + 256); // extra space for "dialog..."
-      sprintf(cmd, "dialog --clear --title \"Pick a station\" ");
+      sprintf(cmd, "dialog --default-item % 10d ", previtem);
+      sprintf(cmd+strlen(cmd),"--clear --title \"Pick a station\" ");
+
       if (play) {
 	  sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
 	  sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Save\" ");
@@ -241,6 +244,9 @@ int get_url(char *the_url) {
 #endif
       while (rerun) {
 	rerun = 0; // Only rerun if we hit play or stop.
+	// Replace beginning of cmd with remembered previous selection.
+	sprintf(cmd, "dialog --default-item % 10d", previtem);
+	cmd[strlen(cmd)] = ' ';
 	//printf("\n%s\n", cmd);
 	choice = system ( cmd ) ;
 	//printf("dialog => %d, 0x%08x\n",choice,choice);
@@ -266,6 +272,11 @@ int get_url(char *the_url) {
 	  char *name = cJSON_GetObjectItem(item,"name")->valuestring;
 	  char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
 	  char *codec = cJSON_GetObjectItem(item,"codec")->valuestring;
+	  previtem = i;
+	  if (fd = fopen("ziptuner.item", "w")){
+	    fprintf(fd, "%d", previtem); 
+	    fclose(fd);
+	  }
 	  /* If we hit play, play the playlist in the background and rerun the list. */
           if (play && (choice == 0)) {
 	    int j;
@@ -572,37 +583,40 @@ int main(int argc, char **argv){
     exit(0);
   }
 
-  if (!(fd = fopen("/tmp/ziptuner.tmp", "r")))
-  {
-    //remove("/tmp/ziptuner.tmp");
-    //return NULL;
-  }
   buff[0] = 0;
-  while (fgets(buff, 255, fd) != NULL)
-    {}
-  fclose(fd);
-  //printf("\n\n%s\n",buff);
-
+  if (fd = fopen("/tmp/ziptuner.tmp", "r"))
+  {
+    while (fgets(buff, 255, fd) != NULL)
+      {}
+    fclose(fd);
+    //printf("\n\n%s\n",buff);
+  }
   if (1 != sscanf(buff, "%d", &i))
     exit(0); // /tmp/ziptuner.tmp is empty, so they hit cancel.  Pack up and go home.
 
   // Try to reuse prev search if selected option 0.
   buff[0] = 0;
   if (i == 0) {
-    if (i == 0) {
-      if (fd = fopen("ziptuner.url", "r")) {
-        while (fgets(buff, 255, fd) != NULL)
-          {}
-        fclose(fd);
-        if (strlen(buff)) {
-	  char *p = strrchr(buff, '/');
-	  if (p) strcpy(srch_str, ++p);
-	  else strcpy(srch_str, "previous search");
-	  strcpy(srch_url, buff);
-        }
+    if (fd = fopen("ziptuner.url", "r")) {
+      while (fgets(buff, 255, fd) != NULL)
+	{}
+      fclose(fd);
+      if (strlen(buff)) {
+	char *p = strrchr(buff, '/');
+	if (p) strcpy(srch_str, ++p);
+	else strcpy(srch_str, "previous search");
+	strcpy(srch_url, buff);
+	// If reusing search, attempt to reuse last item selected as well.
+	if (fd = fopen("ziptuner.item", "r")) {
+	  if (1 == fscanf(fd, "%d", &i))
+	    previtem = i;
+	}
       }
     }
   }
+  else if (-1 != access("ziptuner.item", F_OK))
+    unlink("ziptuner.item");
+
   if (!strlen(buff)) {
   switch (i) {
   case 2:
