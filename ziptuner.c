@@ -168,17 +168,18 @@ int get_url(char *the_url) {
   else {
     cJSON *json = cJSON_Parse(chunk.memory); 
     int n = 0;
-    //printf("%s\n",chunk.memory);
+    //printf("%s\n",chunk.memory); exit(0);
     if (json) 
       n = cJSON_GetArraySize(json);
     if (n <= 0)
       retval = 0;
     else {
       int i = 0;
-      //printf("found %d tags\n",n);
+      //printf("found %d tags\n",n); exit(0);
       cmd = malloc(chunk.size + strlen(srch_str) + 256); // extra space for "dialog..."
       sprintf(cmd, "dialog --default-item % 10d ", previtem);
       sprintf(cmd+strlen(cmd),"--clear --title \"Pick a station\" ");
+      sprintf(cmd+strlen(cmd),"--cancel-label \"Quit\" ");
 
       if (play) {
 	  sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
@@ -306,6 +307,7 @@ int get_url(char *the_url) {
 	    if (stop)
 	      system ( stop ); // This lets us kill any player, if multiple available.
             system ( buff );
+	    //printf ("\n%s\n", buff); exit(0);
 #if 0
 	    if (fd = fopen("play.url", "w")){
 	      fprintf(fd, buff); 
@@ -450,10 +452,119 @@ int get_url(char *the_url) {
   if (0 == retval) {
     //printf("messagebox Got nothing\n");
     cmd = cmd_out;
-    sprintf(cmd, "dialog --clear --title \"Sorry.\" --msgbox \"None Found.\"");
+    sprintf(cmd, "dialog --clear --title \"Sorry.\" ");
+    strcat(cmd,"--backtitle \"ziptuner\" ");
+    strcat(cmd,"--msgbox \"None Found.\"");
     sprintf(cmd+strlen(cmd)," %d %d", 6, 20);
     system ( cmd ) ;
   }
+  curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
+  free(chunk.memory);
+  chunk.size = 0;
+  /* we're done with libcurl, so clean it up */ 
+  curl_global_cleanup();
+
+  return retval;
+}
+
+/************************************************/
+int get_srch_str_from_list(char *the_url) {
+  int retval = 0;
+  CURL *curl_handle;
+  CURLcode res;
+  char *s, *playlist;
+  struct MemoryStruct chunk;
+  chunk.memory = (char *)malloc(1); /* will be grown as needed by WriteMemoryCallback() */ 
+  chunk.size = 0; /* no data at this point */
+  //printf("\nURL = %s\n\n", url);
+  curl_global_init(CURL_GLOBAL_ALL);
+  curl_handle = curl_easy_init();
+  curl_easy_setopt(curl_handle, CURLOPT_URL,the_url);
+  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+  res = curl_easy_perform(curl_handle);
+  cmd = NULL; // Do not free cmd when done unless we malloc for station pick dialog.
+  if(res != CURLE_OK) {
+    fprintf(stderr, "curl_easy_perform() failed: %s\n",curl_easy_strerror(res));
+  }
+  else if (chunk.size > 0) {
+    cJSON *json = cJSON_Parse(chunk.memory); 
+    int n = 0;
+    //printf("%s\n",chunk.memory); exit(0);
+    if (json) 
+      n = cJSON_GetArraySize(json);
+    if (n > 0) {
+      int i = 0;
+      int j = 0;
+      cmd = malloc(chunk.size + strlen(srch_str) + 256); // extra space for "dialog..."
+      sprintf(cmd, "dialog --clear --title \"Pick from list\" ");
+      sprintf(cmd+strlen(cmd),"--menu \"%d %s\"", n, srch_str);
+      sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
+      for (i=0; i<n; i++){
+	cJSON *item = cJSON_GetArrayItem(json, i);
+	char *name = cJSON_GetObjectItem(item,"name")->valuestring;
+	char *count = cJSON_GetObjectItem(item,"stationcount")->valuestring;
+	int k = atoi(count);
+	if (k < 2)
+	  j++;
+	strcat(cmd," ");
+	sprintf(cmd+strlen(cmd),"%d",i+1);
+	//strcat(cmd,"\"");
+	strcat(cmd," \"");
+	sprintf(cmd+strlen(cmd),"% 5d . ",k);
+	for (s = strpbrk(name, "\""); s; s = strpbrk(s, "\""))
+	  *s = '-'; // Quotes inside strings confuse Dialog.
+	if (U2L) {
+	    utf8tolatin(name);
+	}
+	strcat(cmd,name);
+	strcat(cmd,"\"");
+      }
+      //printf("\n\%s\n",cmd); exit (0);
+      strcat(cmd, " 2>/tmp/ziptuner.tmp");
+      choice = system ( cmd ) ;
+      //printf("%s\n",chunk.memory); 
+      printf("found %d tags\n",n);
+      printf("%d bogus tags\n",j);
+
+      // Need to get result and store it in srch_str;
+      if (fd = fopen("/tmp/ziptuner.tmp", "r")) {
+	if (1 == fscanf(fd, "%d", &i)) {
+	  cJSON *item = cJSON_GetArrayItem(json, i-1);
+	  char *name = cJSON_GetObjectItem(item,"name")->valuestring;
+	  strcpy(srch_str, name);
+	  if (strlen(srch_str)) {
+	    if (s = strpbrk(srch_str, "\r\n"))
+	      *s = 0;
+	    strcat(srch_url, srch_str);
+	    retval = 1;
+	  }
+	}
+	fclose(fd);
+      }
+    }
+  }
+  
+  // Do I need choice for anything?
+  //printf("srchstr: <%s>\n", srch_str);
+  //printf("srchurl: <%s>\n", srch_url);
+  //printf("cmdl: <%s>\n", cmd);
+  //exit(0);
+
+  if (cmd)
+    free(cmd);
+#if 0
+  if (0 == retval) {
+    //printf("messagebox Got nothing\n");
+    cmd = cmd_out;
+    sprintf(cmd, "dialog --clear --title \"Sorry.\" ");
+    strcat(cmd,"--backtitle \"ziptuner\" ");
+    strcat(cmd,"--msgbox \"None Found.\"");
+    sprintf(cmd+strlen(cmd)," %d %d", 6, 20);
+    system ( cmd ) ;
+  }
+#endif
   curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
   free(chunk.memory);
   chunk.size = 0;
@@ -548,20 +659,28 @@ int main(int argc, char **argv){
     codecs[np] = ""; // blank codec matches all for fallback.
     players[np++] = play;
   }
-  else
-    play = players[np];
+  else if (np)  // If we got players but no default, use the first as default.
+    play = players[0]; // Need to set play to non-null to activate play button.
   /* for (i=0; i<np; i++) */
   /*   printf("Codec=<%s> Playcmd=<%s>\n", codecs[i], players[i]); */
 
  retry:
   sprintf(srch_url, "http://www.radio-browser.info/webservice/json/stations/");
   sprintf(cmd, "dialog --clear --title \"Zippy Internet Radio Tuner\" ");
+  sprintf(cmd+strlen(cmd),"--cancel-label \"Quit\" ");
   if (stop) { // Use Help button for Stop, else we must swap Extra,Cancel buttons.
     sprintf(cmd+strlen(cmd),"--help-button --help-label \"Stop\" ");
     //sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Stop\" ");
   }
-  strcat(cmd,"--menu \"Select Type of Search\"");
-  sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-9);
+  if ((width < 80) || (height < 24)) { // Fit dialog to small screen.
+    strcat(cmd,"--menu \"Select Type of Search\"");
+    sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-9);
+  }
+  else { // The screen is large, so display backtitle and small dialog.
+    strcat(cmd,"--backtitle \"ziptuner\" ");
+    strcat(cmd,"--menu \"Select Type of Search\"");
+    sprintf(cmd+strlen(cmd)," %d %d %d", 16, 45, 9);
+  }
   if (-1 != access("ziptuner.url", F_OK)){
       strcat(cmd," 0 \"Resume previous search\"");
   }
@@ -570,6 +689,11 @@ int main(int argc, char **argv){
   strcat(cmd," 3 \"Search by State\"");
   strcat(cmd," 4 \"Search by Language\"");
   strcat(cmd," 5 \"Search by Station Name\"");
+
+  strcat(cmd," 6 \"List Countries\"");
+  strcat(cmd," 7 \"List Languages\"");
+  strcat(cmd," 8 \"List Tags (there are many)\"");
+
   strcat(cmd, " 2>/tmp/ziptuner.tmp");
 
   //printf("cmd = %s\n", cmd);
@@ -610,9 +734,38 @@ int main(int argc, char **argv){
 	if (fd = fopen("ziptuner.item", "r")) {
 	  if (1 == fscanf(fd, "%d", &i))
 	    previtem = i;
+	  fclose(fd);
 	}
       }
     }
+  }
+  else if ((i >= 6) && (i <= 8))  {
+    if (i == 6) {
+	strcpy(srch_str, "Countries");
+	strcpy(buff,"http://www.radio-browser.info/webservice/json/countries");
+	strcat(srch_url, "bycountry/");
+	// about 144 name value stationcount (name always seems same as value)
+    }
+    else if (i == 7) {
+	strcpy(srch_str, "Languages");
+	strcpy(buff,"http://www.radio-browser.info/webservice/json/languages");
+	strcat(srch_url, "bylanguage/");
+	// about 160 name value stationcount (name always seems same as value)
+    }
+    else if (i == 8) {
+	strcpy(srch_str, "Tags");
+	strcpy(buff,"http://www.radio-browser.info/webservice/json/tags");
+	strcat(srch_url, "bytag/");
+	// about 3000 name value stationcount (name always seems same as value)
+	// but about 1800 are bogus (skip items with stationcount < 2)
+	//
+	// Need to run another dialog in get_srch_str_from_list() to pick a name.
+    }
+    if (!get_srch_str_from_list(buff))
+      goto retry;
+
+    if (-1 != access("ziptuner.item", F_OK))
+      unlink("ziptuner.item");
   }
   else if (-1 != access("ziptuner.item", F_OK))
     unlink("ziptuner.item");
@@ -668,7 +821,7 @@ int main(int argc, char **argv){
     }
 #endif
   }
-  }
+  } // (!strlen(buff)
 
   if (strlen(srch_str)) {
     // gen_tp();  
