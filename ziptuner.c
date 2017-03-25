@@ -525,8 +525,8 @@ int get_srch_str_from_list(char *the_url) {
       strcat(cmd, " 2>/tmp/ziptuner.tmp");
       choice = system ( cmd ) ;
       //printf("%s\n",chunk.memory); 
-      printf("found %d tags\n",n);
-      printf("%d bogus tags\n",j);
+      //printf("found %d tags\n",n);
+      //printf("%d bogus tags\n",j);
 
       // Need to get result and store it in srch_str;
       if (fd = fopen("/tmp/ziptuner.tmp", "r")) {
@@ -636,10 +636,11 @@ int main(int argc, char **argv){
 	     "\n"
 	     "  -p sets a command for the play button.\n"
 	     "  -s sets a command for the stop button.\n"
+	     "  -u Convert Latin1 UTF-8 chars to iso-8859-1\n"
 	     "  Multiple destinations allowed (files or folders)\n"
 	     "\n"
-	     "eg:"
-	     "  ziptuner -p \"mpg123 -@ \" ~/my/playlist/folder\n\n"
+	     "eg:\n  "
+	     "ziptuner -p \"mpg123 -q -@ \" ~/my/playlist/folder\n\n"
 	     );
       exit(0);
     default:
@@ -672,7 +673,7 @@ int main(int argc, char **argv){
     sprintf(cmd+strlen(cmd),"--help-button --help-label \"Stop\" ");
     //sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Stop\" ");
   }
-  if ((width < 80) || (height < 24)) { // Fit dialog to small screen.
+  if ((width < 80) || (height < 23)) { // Fit dialog to small screen.
     strcat(cmd,"--menu \"Select Type of Search\"");
     sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-9);
   }
