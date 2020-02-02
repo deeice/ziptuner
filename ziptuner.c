@@ -140,6 +140,21 @@ char *utf8tolatin(char *s) {
 }
 
 /************************************************/
+gotnone(void) {
+  //printf("messagebox Got nothing\n");
+  cmd = cmd_out;
+  sprintf(cmd, "dialog --clear --title \"Sorry.\" ");
+  strcat(cmd,"--backtitle \"ziptuner\" ");
+  strcat(cmd,"--msgbox \"None Found.\"");
+#if 0
+  sprintf(cmd+strlen(cmd)," %d %d", 6, 20);
+#else
+  sprintf(cmd+strlen(cmd)," %d %d", 8, 20);
+#endif
+  system ( cmd ) ;
+}
+
+/************************************************/
 int get_url(char *the_url) {
   int retval = 1;
   int rerun = 1;
@@ -450,13 +465,7 @@ int get_url(char *the_url) {
   if (cmd)
     free(cmd);
   if (0 == retval) {
-    //printf("messagebox Got nothing\n");
-    cmd = cmd_out;
-    sprintf(cmd, "dialog --clear --title \"Sorry.\" ");
-    strcat(cmd,"--backtitle \"ziptuner\" ");
-    strcat(cmd,"--msgbox \"None Found.\"");
-    sprintf(cmd+strlen(cmd)," %d %d", 6, 20);
-    system ( cmd ) ;
+    gotnone();
   }
   curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
   free(chunk.memory);
@@ -556,13 +565,7 @@ int get_srch_str_from_list(char *the_url) {
     free(cmd);
 #if 0
   if (0 == retval) {
-    //printf("messagebox Got nothing\n");
-    cmd = cmd_out;
-    sprintf(cmd, "dialog --clear --title \"Sorry.\" ");
-    strcat(cmd,"--backtitle \"ziptuner\" ");
-    strcat(cmd,"--msgbox \"None Found.\"");
-    sprintf(cmd+strlen(cmd)," %d %d", 6, 20);
-    system ( cmd ) ;
+    gotnone();
   }
 #endif
   curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
@@ -570,6 +573,162 @@ int get_srch_str_from_list(char *the_url) {
   chunk.size = 0;
   /* we're done with libcurl, so clean it up */ 
   curl_global_cleanup();
+
+  return retval;
+}
+
+/************************************************/
+#include <dirent.h>
+/************************************************/
+int get_favs()
+{
+  // Find all .m3u and .pls files in the save dirs (including .)
+
+  // NOTE: This could all be added to get_url() 
+  //       Pass "file://." as the arg to tell me to look for favs instead of using json request.
+  //       Then I can reuse all the play/stop/quit code.  But playlist is a file, not an url.
+  //       or can I pass players an url with file://.foo.m3u or something like that?
+  int retval = 0;
+  int rerun = 1;
+  DIR *dir;
+  struct dirent *dent;
+  char *s;
+  int j,i = 0;
+  int item = 0;
+
+  printf("get favs\n");
+
+  cmd = cmd_out;
+  sprintf(cmd, "dialog --default-item % 10d ", previtem);
+  sprintf(cmd+strlen(cmd),"--clear --title \"Pick a station\" ");
+  sprintf(cmd+strlen(cmd),"--cancel-label \"Quit\" ");
+  if (play) {
+    sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
+  }
+  if (stop) { // Use Help button for Stop.
+    sprintf(cmd+strlen(cmd),"--help-button --help-label \"Stop\" ");
+    //sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Stop\" ");
+  }
+  //sprintf(cmd+strlen(cmd),"--menu \"%d Saved Stations\"", n);
+  sprintf(cmd+strlen(cmd),"--menu \"Saved Stations\"");
+  sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
+
+  // Maybe call scandir() to filter .m3u and .pls files?
+
+  // Or just make room for 255 favorite stations.  
+  // Shouldn't need more than a dozen, but can realloc for collectors...
+  char **names = (char **)malloc(256*sizeof(char *));
+  
+  // Loop through destinations and find playlists
+  //printf("Loop through destfiles/dirs and save the playlist\n");
+  //  for (j=0; j < destnum; j++) {
+  // ALL dest dirs should have the SAME saved playlists, so just use first.
+  // Otherwise I would have to check for dups, and that's too much work.
+  for (j=0; j < 1; j++) { 
+    struct stat path_stat;
+    destfile = dest[j];
+    int fileexists = (-1 != access(destfile, F_OK));
+    printf("dest[%d] = %s (exists = %d)\n", j, destfile, fileexists);
+    if (!fileexists)
+      continue;
+    if (0 != stat(destfile, &path_stat))
+      continue;
+    if (!S_ISDIR(path_stat.st_mode))
+      dir = NULL;
+    else {
+      //printf("Found directory\n");
+      dir = opendir(destfile);
+      if (dir == NULL) {
+	printf("Cannot open dir\n");
+	continue;
+      }
+      if ((dent = readdir(dir)) == NULL)
+	continue;
+      strcpy(srch_url, destfile);
+      strcat(srch_url, "/");
+    }
+    strcpy(pls_url, destfile);
+    do {
+      if (dir){
+	destfile = dent->d_name;
+	strcpy(pls_url, srch_url);
+	strcat(pls_url, destfile);
+      }
+      if (strstr(destfile, ".m3u") || strstr(destfile, ".pls")){
+	strcpy(buff, destfile);
+	names[i] = strdup(pls_url);
+	if ((s = strstr(buff, ".m3u")) || (s = strstr(buff, ".pls")))
+	  *s = 0;
+	for (s = strpbrk(buff, "_"); s; s = strpbrk(s, "_"))
+	  *s = ' '; // Restore spaces in filenames.
+	
+	printf("%s\n", buff);
+	strcat(cmd," ");
+	sprintf(cmd+strlen(cmd),"%d",i+1);
+	//strcat(cmd,"\"");
+	strcat(cmd," \"");
+	strcat(cmd,buff);
+	strcat(cmd,"\"");
+	
+	if (++i == 255) break;
+      } 
+    } while (dir && ((dent = readdir(dir)) != NULL));
+    names[i] = NULL;
+    
+    closedir(dir);
+  }
+      
+  if (i == 0) // Give up if no saved stations found.
+  {
+    gotnone();
+    return 0;
+  }
+
+  strcat(cmd, " 2>/tmp/ziptuner.tmp");
+
+  while (rerun) {
+    rerun = 0; // Only rerun if we hit play or stop.
+    // Replace beginning of cmd with remembered previous selection.
+    sprintf(cmd, "dialog --default-item % 10d", previtem);
+    cmd[strlen(cmd)] = ' ';
+
+    printf("\n%s\n", cmd);
+    choice = system ( cmd ) ;
+   
+    printf("choice = %d\n",choice);
+    if ((choice == 0x100)) {
+      printf("quit\n");
+      exit(0);
+    }
+
+    // Need to get result and store it in previtem
+    if (fd = fopen("/tmp/ziptuner.tmp", "r")) {
+      if (1 == fscanf(fd, "%d", &i)) {
+	printf("item = %d\n",i);
+	previtem = i;
+	strcpy(buff, names[i-1]);
+	printf("Playing %s\n", buff);
+	retval = 1;
+      }
+      fclose(fd);
+    }
+  
+    /* If we hit play, play the playlist in the background and rerun the list. */
+    if (play && (choice == 0)) {
+      char *playcmd = play;
+      strcpy(buff, playcmd);
+      playcmd = buff;
+      sprintf(buff+strlen(buff), " \"%s\" &", names[previtem-1]);
+      if (stop)
+	system ( stop ); // This lets us kill any player, if multiple available.
+      
+      printf("\nCMD=%s\n", buff);
+
+      system ( buff ); // Now play the station,
+      rerun = 1;       // and redisplay the list in case we want to change it.
+      continue;
+    }
+  }
 
   return retval;
 }
@@ -675,12 +834,12 @@ int main(int argc, char **argv){
   }
   if ((width < 80) || (height < 23)) { // Fit dialog to small screen.
     strcat(cmd,"--menu \"Select Type of Search\"");
-    sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-9);
+    sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-(9+(play?1:0)));
   }
   else { // The screen is large, so display backtitle and small dialog.
     strcat(cmd,"--backtitle \"ziptuner\" ");
     strcat(cmd,"--menu \"Select Type of Search\"");
-    sprintf(cmd+strlen(cmd)," %d %d %d", 16, 45, 9);
+    sprintf(cmd+strlen(cmd)," %d %d %d", 16, 45, 9+(play?1:0));
   }
   if (-1 != access("ziptuner.url", F_OK)){
       strcat(cmd," 0 \"Resume previous search\"");
@@ -694,6 +853,8 @@ int main(int argc, char **argv){
   strcat(cmd," 6 \"List Countries\"");
   strcat(cmd," 7 \"List Languages\"");
   strcat(cmd," 8 \"List Tags (there are many)\"");
+  if (play)
+    strcat(cmd," 9 \"List Saved Stations\"");
 
   strcat(cmd, " 2>/tmp/ziptuner.tmp");
 
@@ -765,6 +926,14 @@ int main(int argc, char **argv){
     if (!get_srch_str_from_list(buff))
       goto retry;
 
+    if (-1 != access("ziptuner.item", F_OK))
+      unlink("ziptuner.item");
+  }
+  else if (i == 9) {
+    // Find all .m3u and .pls files in save dirs (including .)
+    get_favs();
+    strcpy(buff, "file://.");
+    strcpy(srch_str,"");
     if (-1 != access("ziptuner.item", F_OK))
       unlink("ziptuner.item");
   }
