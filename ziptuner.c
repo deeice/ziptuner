@@ -25,8 +25,9 @@
 
 
 int  destnum = 1;
+char *destdir = "."; // Default playlist save location (if none specified) is here.
+char **dest = &destdir;
 char *destfile = ".";
-char **dest = &destfile;
 char srch_url[512] = "";
 char srch_str[512] = "";
 char pls_url[512] = "";
@@ -194,7 +195,7 @@ int get_url(char *the_url) {
       cmd = malloc(chunk.size + strlen(srch_str) + 256); // extra space for "dialog..."
       sprintf(cmd, "dialog --default-item % 10d ", previtem);
       sprintf(cmd+strlen(cmd),"--clear --title \"Pick a station\" ");
-      sprintf(cmd+strlen(cmd),"--cancel-label \"Quit\" ");
+      sprintf(cmd+strlen(cmd),"--cancel-label \"Back\" ");
 
       if (play) {
 	  sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
@@ -334,6 +335,7 @@ int get_url(char *the_url) {
 	  }
 
 	  /* Did NOT hit play, so we need to fetch the playlist and save it. */
+	  rerun = 1;
 	  sprintf(pls_url, "http://www.radio-browser.info/webservice/v2/m3u/url/%s",id);
 	  /* Start over with curl */
 	  curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
@@ -473,6 +475,11 @@ int get_url(char *the_url) {
   /* we're done with libcurl, so clean it up */ 
   curl_global_cleanup();
 
+  if (choice == 0x100) {
+    //printf("quit\n");
+    return 0;
+  }
+
   return retval;
 }
 
@@ -596,14 +603,15 @@ int get_favs()
   int j,i = 0;
   int item = 0;
 
-  printf("get favs\n");
+  //printf("get favs\n");
 
   cmd = cmd_out;
   sprintf(cmd, "dialog --default-item % 10d ", previtem);
   sprintf(cmd+strlen(cmd),"--clear --title \"Pick a station\" ");
-  sprintf(cmd+strlen(cmd),"--cancel-label \"Quit\" ");
+  sprintf(cmd+strlen(cmd),"--cancel-label \"Back\" ");
   if (play) {
     sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
+    sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Delete\" ");
   }
   if (stop) { // Use Help button for Stop.
     sprintf(cmd+strlen(cmd),"--help-button --help-label \"Stop\" ");
@@ -686,19 +694,28 @@ int get_favs()
 
   strcat(cmd, " 2>/tmp/ziptuner.tmp");
 
+  //printf("After srch, dest[%d] = <%s>\n", j, destfile);
+  
+  //*****************************
   while (rerun) {
     rerun = 0; // Only rerun if we hit play or stop.
     // Replace beginning of cmd with remembered previous selection.
     sprintf(cmd, "dialog --default-item % 10d", previtem);
     cmd[strlen(cmd)] = ' ';
 
-    printf("\n%s\n", cmd);
+    //printf("\n%s\n", cmd);
     choice = system ( cmd ) ;
    
-    printf("choice = %d\n",choice);
-    if ((choice == 0x100)) {
-      printf("quit\n");
-      exit(0);
+    //printf("choice = %d\n",choice);
+    if (stop && (choice == 0x200)) { // 0x200=help button
+      system ( stop ) ;
+      //printf("\n\n%s\n",stop);exit(0);
+      rerun = 1;
+      continue;
+    }
+    if (choice == 0x100) {
+      //printf("quit\n");
+      return 1;
     }
 
     // Need to get result and store it in previtem
@@ -713,6 +730,13 @@ int get_favs()
       fclose(fd);
     }
   
+    if (choice == 0x300) {
+      /* Extra button means delete (need to write some code to find and delete this playlist) */
+      /* Probably need to rescan dir (or remove deleted from array before rerun). */
+      rerun = 1;
+      continue;
+    }
+    
     /* If we hit play, play the playlist in the background and rerun the list. */
     if (play && (choice == 0)) {
       char *playcmd = play;
@@ -734,10 +758,8 @@ int get_favs()
 }
 
 /************************************************/
-int main(int argc, char **argv){
+int parse_args(int argc, char **argv){
   char *s;
-  FILE *fd;
-  int i;
 
   /* Get terminal size for better dialog size estimates. */
   struct winsize ws;
@@ -807,6 +829,7 @@ int main(int argc, char **argv){
       break;
     }
   }
+  // Everything after options is playlist save locations.
   if (argc > 0) {
     destfile = argv[0];
     dest = argv;
@@ -823,8 +846,19 @@ int main(int argc, char **argv){
     play = players[0]; // Need to set play to non-null to activate play button.
   /* for (i=0; i<np; i++) */
   /*   printf("Codec=<%s> Playcmd=<%s>\n", codecs[i], players[i]); */
+}
 
+/************************************************/
+int main(int argc, char **argv){
+  char *s;
+  FILE *fd;
+  int i,j;
+
+  parse_args(argc, argv);
+
+  // Main loop of main menu (need to make it a loop instead of a goto)
  retry:
+  j=play?1:0; // Add an extra line to menu for favs, if play is available.
   sprintf(srch_url, "http://www.radio-browser.info/webservice/json/stations/");
   sprintf(cmd, "dialog --clear --title \"Zippy Internet Radio Tuner\" ");
   sprintf(cmd+strlen(cmd),"--cancel-label \"Quit\" ");
@@ -834,12 +868,12 @@ int main(int argc, char **argv){
   }
   if ((width < 80) || (height < 23)) { // Fit dialog to small screen.
     strcat(cmd,"--menu \"Select Type of Search\"");
-    sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-(9+(play?1:0)));
+    sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-9);
   }
   else { // The screen is large, so display backtitle and small dialog.
     strcat(cmd,"--backtitle \"ziptuner\" ");
     strcat(cmd,"--menu \"Select Type of Search\"");
-    sprintf(cmd+strlen(cmd)," %d %d %d", 16, 45, 9+(play?1:0));
+    sprintf(cmd+strlen(cmd)," %d %d %d", 16+j, 45, 9+j);
   }
   if (-1 != access("ziptuner.url", F_OK)){
       strcat(cmd," 0 \"Resume previous search\"");
@@ -936,10 +970,16 @@ int main(int argc, char **argv){
     strcpy(srch_str,"");
     if (-1 != access("ziptuner.item", F_OK))
       unlink("ziptuner.item");
+    goto retry;
   }
   else if (-1 != access("ziptuner.item", F_OK))
     unlink("ziptuner.item");
 
+  /************************************************/
+  // If we get to here, we are gonna run a requested search.
+  // (break off to new fn, for readability?
+  /************************************************/
+  
   if (!strlen(buff)) {
   switch (i) {
   case 2:
