@@ -200,9 +200,12 @@ int get_url(char *the_url) {
       if (play) {
 	  sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
 	  sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Save\" ");
+	  if (stop) { // Use Help button for Stop, but only if play is available.
+	    sprintf(cmd+strlen(cmd),"--help-button --help-label \"Stop\" ");
+	  }
       }
-      if (stop) { // Use Help button for Stop.
-	sprintf(cmd+strlen(cmd),"--help-button --help-label \"Stop\" ");
+      else {
+	  sprintf(cmd+strlen(cmd),"--ok-label \"Save\" ");
       }
       sprintf(cmd+strlen(cmd),"--menu \"%d Stations matching <%s>\"", n, srch_str);
       sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
