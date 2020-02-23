@@ -588,9 +588,30 @@ int get_srch_str_from_list(char *the_url) {
 }
 
 /************************************************/
+char *names[256] = {NULL};
+char *files[256] = {NULL};
+
+/************************************************/
+void clean_favs() // Cleanup allocated (strdup) strings
+{
+  int i;
+  
+  for (i=0; i<256; i++){
+    if (NULL == names[i])
+      break;
+    free(files[i]);
+    free(names[i]);
+  }
+  files[0] = NULL;
+  names[0] = NULL;
+}
+
+/************************************************/
 #include <dirent.h>
 /************************************************/
-int get_favs()
+
+/************************************************/
+void get_favs()
 {
   // Find all .m3u and .pls files in the save dirs (including .)
 
@@ -598,17 +619,20 @@ int get_favs()
   //       Pass "file://." as the arg to tell me to look for favs instead of using json request.
   //       Then I can reuse all the play/stop/quit code.  But playlist is a file, not an url.
   //       or can I pass players an url with file://.foo.m3u or something like that?
-  int retval = 0;
-  int rerun = 1;
+  int rerun;
   DIR *dir;
   struct dirent *dent;
   char *s;
-  int j,i = 0;
-  int item = 0;
+  int i,j;
+  int item;
 
   //printf("get favs\n");
-
   cmd = cmd_out;
+
+ scanfavs:
+  rerun = 1;
+  i = 0;
+  item = 0;
   sprintf(cmd, "dialog --default-item % 10d ", previtem);
   sprintf(cmd+strlen(cmd),"--clear --title \"Pick a station\" ");
   sprintf(cmd+strlen(cmd),"--cancel-label \"Back\" ");
@@ -628,7 +652,7 @@ int get_favs()
 
   // Or just make room for 255 favorite stations.  
   // Shouldn't need more than a dozen, but can realloc for collectors...
-  char **names = (char **)malloc(256*sizeof(char *));
+  //char **names = (char **)malloc(256*sizeof(char *));
   
   // Loop through destinations and find playlists
   //printf("Loop through destfiles/dirs and save the playlist\n");
@@ -667,6 +691,7 @@ int get_favs()
       }
       if (strstr(destfile, ".m3u") || strstr(destfile, ".pls")){
 	strcpy(buff, destfile);
+	files[i] = strdup(pls_url);
 	names[i] = strdup(pls_url);
 	if ((s = strstr(buff, ".m3u")) || (s = strstr(buff, ".pls")))
 	  *s = 0;
@@ -692,7 +717,7 @@ int get_favs()
   if (i == 0) // Give up if no saved stations found.
   {
     gotnone();
-    return 0;
+    return;
   }
 
   strcat(cmd, " 2>/tmp/ziptuner.tmp");
@@ -718,28 +743,32 @@ int get_favs()
     }
     if (choice == 0x100) {
       //printf("quit\n");
-      return 1;
+      clean_favs();
+      return;
     }
 
     // Need to get result and store it in previtem
     if (fd = fopen("/tmp/ziptuner.tmp", "r")) {
       if (1 == fscanf(fd, "%d", &i)) {
 	printf("item = %d\n",i);
-	previtem = i;
-	strcpy(buff, names[i-1]);
-	printf("Playing %s\n", buff);
-	retval = 1;
       }
+      else continue;
       fclose(fd);
     }
-  
-    if (choice == 0x300) {
-      /* Extra button means delete (need to write some code to find and delete this playlist) */
+    else continue;
+
+    if (choice == 0x300) { // Extra button means delete
+      /*  (need to write some code to find and delete this playlist) */
       /* Probably need to rescan dir (or remove deleted from array before rerun). */
-      rerun = 1;
-      continue;
+      unlink(files[i-1]);
+      clean_favs();
+      goto scanfavs;
     }
     
+    previtem = i;
+    strcpy(buff, names[i-1]);
+    printf("Playing %s\n", buff);
+	
     /* If we hit play, play the playlist in the background and rerun the list. */
     if (play && (choice == 0)) {
       char *playcmd = play;
@@ -757,7 +786,7 @@ int get_favs()
     }
   }
 
-  return retval;
+  clean_favs();
 }
 
 /************************************************/
