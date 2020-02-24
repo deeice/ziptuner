@@ -663,7 +663,7 @@ void get_favs()
     struct stat path_stat;
     destfile = dest[j];
     int fileexists = (-1 != access(destfile, F_OK));
-    printf("dest[%d] = %s (exists = %d)\n", j, destfile, fileexists);
+    //printf("dest[%d] = %s (exists = %d)\n", j, destfile, fileexists);
     if (!fileexists)
       continue;
     if (0 != stat(destfile, &path_stat))
@@ -674,7 +674,7 @@ void get_favs()
       //printf("Found directory\n");
       dir = opendir(destfile);
       if (dir == NULL) {
-	printf("Cannot open dir\n");
+	//printf("Cannot open dir\n");
 	continue;
       }
       if ((dent = readdir(dir)) == NULL)
@@ -698,7 +698,7 @@ void get_favs()
 	for (s = strpbrk(buff, "_"); s; s = strpbrk(s, "_"))
 	  *s = ' '; // Restore spaces in filenames.
 	
-	printf("%s\n", buff);
+	//printf("%s\n", buff);
 	strcat(cmd," ");
 	sprintf(cmd+strlen(cmd),"%d",i+1);
 	//strcat(cmd,"\"");
@@ -750,7 +750,7 @@ void get_favs()
     // Need to get result and store it in previtem
     if (fd = fopen("/tmp/ziptuner.tmp", "r")) {
       if (1 == fscanf(fd, "%d", &i)) {
-	printf("item = %d\n",i);
+	//printf("item = %d\n",i);
       }
       else continue;
       fclose(fd);
@@ -767,7 +767,7 @@ void get_favs()
     
     previtem = i;
     strcpy(buff, names[i-1]);
-    printf("Playing %s\n", buff);
+    //printf("Playing %s\n", buff);
 	
     /* If we hit play, play the playlist in the background and rerun the list. */
     if (play && (choice == 0)) {
@@ -778,7 +778,7 @@ void get_favs()
       if (stop)
 	system ( stop ); // This lets us kill any player, if multiple available.
       
-      printf("\nCMD=%s\n", buff);
+      //printf("\nCMD=%s\n", buff);
 
       system ( buff ); // Now play the station,
       rerun = 1;       // and redisplay the list in case we want to change it.
@@ -931,7 +931,7 @@ int main(int argc, char **argv){
   //if (stop && (choice == 0x300)) {
   if (stop && (choice == 0x200)) {
     system ( stop ) ;
-    printf("\n\n%s\n",stop);
+    //printf("\n\n%s\n",stop);
     exit(0);
   }
 
