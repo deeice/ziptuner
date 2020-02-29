@@ -471,8 +471,6 @@ int get_url(char *the_url) {
       }
     }
 
-
-
     if (json) 
       cJSON_Delete(json);
   }
@@ -585,11 +583,15 @@ int get_srch_str_from_list(char *the_url) {
 }
 
 /************************************************/
-char *names[256] = {NULL};
-char *files[256] = {NULL};
+  // Make room for 255 favorite stations.  
+  // Shouldn't need more than a dozen, but *could* realloc for collectors...
+/************************************************/
+char *names[256] = {NULL}; // This is the onscreen station names for dialog. 
+char *files[256] = {NULL}; // This is the playlist filenames or url lines.
+char  isdir[256] = {0};     // This tells if the playlist is a directory.
 
 /************************************************/
-void clean_favs() // Cleanup allocated (strdup) strings
+void clean_favs(void) // Cleanup allocated (strdup) strings
 {
   int i;
   
@@ -598,30 +600,108 @@ void clean_favs() // Cleanup allocated (strdup) strings
       break;
     free(files[i]);
     free(names[i]);
+    isdir[i] = 0;
   }
   files[0] = NULL;
   names[0] = NULL;
 }
 
 /************************************************/
-#include <dirent.h>
+// Need some code to dig into the file instead of the dirs
+// Open the file and scan for names after #EXTINF: and urls on the next line.
 /************************************************/
+int get_favs_from_file(void)
+{
+  FILE *fp; 
+  char *p,*s;
+  int j,i = 0;
+  
+  //printf("Found playlist file\n");
+
+  fp = fopen(destfile, "r");
+  if (fp == NULL)
+    return 0;
+  
+  while (fgets(buff, 255, fp) != NULL)
+  {
+    // NOTE: After #EXTINF: should be "nnn,StationName" (nnn is play time secs)
+    if (p = strstr(buff, "#EXTINF:")){
+      p += 8;
+      if (s = strchr(p, '\n'))      // Snip trailing linefeed.
+	*s = 0;
+      j = strspn(p, " 01234567");   // Skip timestamp and comma.
+      if (p[j] == ',')
+	p = p + j+1;
+      strcpy(pls_url, p);
+      if (fgets(buff, 255, fp) == NULL)
+	break;
+      if (s = strchr(buff, '\n'))   // Snip trailing linefeed.
+	*s = 0;
+      names[i] = strdup(pls_url);
+      files[i] = strdup(buff);
+      isdir[i] = 0;
+      if (++i == 255) break;
+    }
+  }
+  fclose(fp);
+
+  names[i] = NULL;
+  return i;
+}
+
+/************************************************/
+#include <dirent.h>
+
+/************************************************/
+int get_favs_from_dir(void)
+{
+  DIR *dir;
+  struct dirent *dent;
+  char *s;
+  int i = 0;
+
+  //printf("Found playlist directory\n");
+
+  // Maybe call scandir() to filter .m3u and .pls files?
+
+  dir = opendir(destfile);
+  if (dir == NULL) 
+    return 0;
+  strcpy(srch_url, destfile);
+  strcat(srch_url, "/");
+  
+  while ((dent = readdir(dir)) != NULL)
+  {
+    destfile = dent->d_name;
+    strcpy(pls_url, srch_url);
+    strcat(pls_url, destfile);
+    
+    if (strstr(destfile, ".m3u") || strstr(destfile, ".pls")){
+      strcpy(buff, destfile);
+      files[i] = strdup(pls_url); // Save the station playlist Filename.
+      isdir[i] = 1;           // And remember its in a playlist dir (not file)
+      if ((s = strstr(buff, ".m3u")) || (s = strstr(buff, ".pls")))
+	*s = 0;
+      for (s = strpbrk(buff, "_"); s; s = strpbrk(s, "_"))
+	*s = ' '; // Restore spaces in filenames.
+      //printf("%s\n", buff);
+      names[i] = strdup(buff); // Save the station Name
+
+      if (++i == 255) break;
+    } 
+  }
+  closedir(dir);
+
+  return i;
+}
 
 /************************************************/
 void get_favs()
 {
   // Find all .m3u and .pls files in the save dirs (including .)
-
-  // NOTE: This could all be added to get_url() 
-  //       Pass "file://." as the arg to tell me to look for favs instead of using json request.
-  //       Then I can reuse all the play/stop/quit code.  But playlist is a file, not an url.
-  //       or can I pass players an url with file://.foo.m3u or something like that?
   int rerun;
-  FILE *fp; 
-  DIR *dir;
-  struct dirent *dent;
   char *s;
-  int i,j;
+  int i,j, k;
   int item;
 
   //printf("get favs\n");
@@ -646,17 +726,11 @@ void get_favs()
   sprintf(cmd+strlen(cmd),"--menu \"Saved Stations\"");
   sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
 
-  // Maybe call scandir() to filter .m3u and .pls files?
-
-  // Or just make room for 255 favorite stations.  
-  // Shouldn't need more than a dozen, but can realloc for collectors...
-  //char **names = (char **)malloc(256*sizeof(char *));
-  
   // Loop through destinations and find playlists
-  //printf("Loop through destfiles/dirs and save the playlist\n");
   //  for (j=0; j < destnum; j++) {
   // ALL dest dirs should have the SAME saved playlists, so just use first.
   // Otherwise I would have to check for dups, and that's too much work.
+  // Also challenging if one dest is a dir, and one is a playlist file...
   for (j=0; j < 1; j++) { 
     struct stat path_stat;
     destfile = dest[j];
@@ -666,69 +740,15 @@ void get_favs()
       continue;
     if (0 != stat(destfile, &path_stat))
       continue;
-    if (!S_ISDIR(path_stat.st_mode)) {
-      dir = NULL;
-      if (fp = fopen(destfile, "r")){
-      }
-      else continue;
-    }
-    else {
-      //printf("Found directory\n");
-      dir = opendir(destfile);
-      if (dir == NULL) {
-	//printf("Cannot open dir\n");
-	continue;
-      }
-      if ((dent = readdir(dir)) == NULL)
-	continue;
-      strcpy(srch_url, destfile);
-      strcat(srch_url, "/");
-    }
-    strcpy(pls_url, destfile);
-    do {
-      if (dir){
-	destfile = dent->d_name;
-	strcpy(pls_url, srch_url);
-	strcat(pls_url, destfile);
-      }
-      else { // dest is a file, not a dir.
-	// Need some code to dig into the file instead of the dir
-	// Open the file and scan for names after #EXTINF: and urls on the next line.
-	// The following code only works for dirs.
-	if (fgets(buff, 255, fp) == NULL)
-	  break;
-	//if (p = strstr(buff, "#EXTINF:"))
-	//  strcpy(pls_url, p);
-	if (fgets(buff, 255, fp) == NULL)
-	  break;
-	// Make everything after strcpy(buff, destfile) below a fn called add_station()
-      }
-      if (strstr(destfile, ".m3u") || strstr(destfile, ".pls")){
-	strcpy(buff, destfile);
-	files[i] = strdup(pls_url);
-	names[i] = strdup(pls_url);
-	if ((s = strstr(buff, ".m3u")) || (s = strstr(buff, ".pls")))
-	  *s = 0;
-	for (s = strpbrk(buff, "_"); s; s = strpbrk(s, "_"))
-	  *s = ' '; // Restore spaces in filenames.
-	
-	//printf("%s\n", buff);
-	strcat(cmd," ");
-	sprintf(cmd+strlen(cmd),"%d",i+1);
-	//strcat(cmd,"\"");
-	strcat(cmd," \"");
-	strcat(cmd,buff);
-	strcat(cmd,"\"");
-	
-	if (++i == 255) break;
-      } 
-    } while (dir && ((dent = readdir(dir)) != NULL));
-    names[i] = NULL;
+    if (!S_ISDIR(path_stat.st_mode)) 
+      i = get_favs_from_file();
+    else 
+      i = get_favs_from_dir();
 
-    if (dir)
-      closedir(dir);
-    else
-      fclose(fp);
+    // Add all station names found to the dialog list.
+    for (k=0; k<i; k++){
+      sprintf(cmd+strlen(cmd)," %d \"%s\"",k+1,names[k]);
+    }
   }
       
   if (i == 0) // Give up if no saved stations found.
@@ -777,18 +797,22 @@ void get_favs()
     if (choice == 0x300) { // Extra button means delete
       /*  (need to write some code to find and delete this playlist) */
       /* Probably need to rescan dir (or remove deleted from array before rerun). */
-      unlink(files[i-1]);
+
+      // NOTE: This ONLY deletes playlist files, not entries in a playlist file.
+      if (isdir[i-1])
+	unlink(files[i-1]);
+      else{
+	// del_fav_in_file(i-1);
+      }
       clean_favs();
       goto scanfavs;
     }
     
     previtem = i;
-    //printf("Playing %s\n", names[i-1]);
-	
+
     /* If we hit play, play the playlist in the background and rerun the list. */
     if (play && (choice == 0)) {
-      playit(names[i-1], NULL);
-      system ( buff ); // Now play the station,
+      playit(files[i-1], NULL); // Now play the station,
       rerun = 1;       // and redisplay the list in case we want to change it.
       continue;
     }
