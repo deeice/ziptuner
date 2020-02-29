@@ -200,31 +200,109 @@ void playit(char * item_url, char *codec)
 }
 
 /************************************************/
-int get_url(char *the_url) {
-  int retval = 1;
-  int rerun = 1;
-  CURL *curl_handle;
-  CURLcode res;
-  char *s, *playlist;
-  struct MemoryStruct chunk;
+void saveurl(char *filename, char *playlist)
+{
+  char *s;
+  int i;
+  FILE *fp;
+  
+  if (U2L)
+    utf8tolatin(filename);
+  for (s = strpbrk(filename, "\""); s; s = strpbrk(s, "\""))
+    *s = '-'; // Quotes inside strings make for ugly filenames.
+  for (s = strpbrk(filename, " "); s; s = strpbrk(s, " "))
+    *s = '_'; // Remove spaces from filenames.
+  for (s=strpbrk(filename,"'`;()&|\\/"); s; s=strpbrk(s,"'`;()&|\\/"))
+    *s = '-'; // Remove other bad chars from filenames.
+  
+  // Loop through destinations and save the playlist
+  //printf("Loop through destfiles/dirs and save the playlist\n");
+  for (i=0; i < destnum; i++) {
+    struct stat path_stat;
+    int fileexists = (-1 != access(dest[i], F_OK));
+    
+    destfile = dest[i];
+    //printf("dest[%d] = %s (exists = %d)\n", i, destfile, fileexists);
+    
+    if (fileexists && (0 == stat(destfile, &path_stat)) && S_ISDIR(path_stat.st_mode)) { 
+      //printf("Found directory\n");
+      // If directory, create a new file.
+      sprintf(buff, "%s/%s%s",destfile, filename, ext);
+      if (fp = fopen(buff, "w")){
+	fprintf(fp, playlist); 
+	fclose(fp);
+      }
+      //printf("Make new file %s\n",buff);
+    }
+    else { // destfile is a file.  Append to it in proper format.
+      char *p = playlist;
+      
+      if (fileexists) {// We must append, and maybe strip some things.
+	//printf("Append to file %s\n",destfile);
+	if (strstr(destfile,".m3u")) {
+	  if (!strcmp(ext, ".m3u")) {
+	    //if (s = strstr(playlist,"#EXTM3U")) p = s+7;
+	    if (s = strstr(playlist,"#EXTINF:")) p = s;
+	  }
+	  // Just grab the urls.  Fix this to handle multiple urls.
+	  else if (s = strstr(playlist,"http")) p = s;
+	}
+	else { // Appending to a .pls file
+	  if (!strcmp(ext, ".pls")) {
+	    if (s = strstr(playlist,"File1=http")) p = s;
+	  }
+	  else { // Appending to .pls, but we fetched .m3u (FIXME)
+	    if (s = strstr(playlist,"http")) p = s;
+	  }
+	}
+      }
+      else { // (FIXME)
+	//printf("Create file %s\n",destfile);
+	// For now, just create new file and dump whatever format we got in it.
+      }
+      //printf("Opening %s\n",destfile);
+      if (fp = fopen(destfile, "a")){
+	//printf("Writing %s\n",p);
+	fprintf(fp, p); 
+	fclose(fp);
+      }
+    }
+  }
+}
+
+/************************************************/
+CURL *curl_handle;
+CURLcode res;
+struct MemoryStruct chunk;
+
+/************************************************/
+int do_curl(char *url)
+{
   chunk.memory = (char *)malloc(1); /* will be grown as needed by WriteMemoryCallback() */ 
-  chunk.size = 0; /* no data at this point */
-  //printf("\nURL = %s\n\n", url);
+  chunk.size = 0;
   curl_global_init(CURL_GLOBAL_ALL);
   curl_handle = curl_easy_init();
-  curl_easy_setopt(curl_handle, CURLOPT_URL,the_url);
+  curl_easy_setopt(curl_handle, CURLOPT_URL, url);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
   curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
   res = curl_easy_perform(curl_handle);
-  cmd = NULL; // Do not free cmd when done unless we malloc for station pick dialog.
   if(res != CURLE_OK) {
     fprintf(stderr, "curl_easy_perform() failed: %s\n",curl_easy_strerror(res));
-    retval = 0;
   }
-  else if (chunk.size <= 0) {
+
+  return res;
+}
+
+/************************************************/
+int get_url(char *the_url) {
+  int retval = 1;
+  int rerun = 1;
+  char *s, *playlist;
+  
+  cmd = NULL; // Do not free cmd when done unless we malloc for station pick dialog.
+  if ((CURLE_OK != do_curl(the_url)) || (chunk.size <= 0))
     retval = 0;
-  }
   else {
     cJSON *json = cJSON_Parse(chunk.memory); 
     int n = 0;
@@ -354,129 +432,47 @@ int get_url(char *the_url) {
 	  /* Start over with curl */
 	  curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
 	  free(chunk.memory);
-	  chunk.memory = (char *)malloc(1);
-	  chunk.size = 0;
+	  if (CURLE_OK != do_curl(pls_url))
+	    continue;
 
-	  curl_global_init(CURL_GLOBAL_ALL);
-	  curl_handle = curl_easy_init();
-	  curl_easy_setopt(curl_handle, CURLOPT_URL,pls_url);
-	  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-	  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-	  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-	  res = curl_easy_perform(curl_handle);
-	  if(res != CURLE_OK) {
-	    fprintf(stderr, "curl_easy_perform() failed: %s\n",curl_easy_strerror(res));
-	  }
-	  else {
-	    // Verify we got a playlist.  If not, try the url from the big list.
-	    playlist = chunk.memory;
-	    //if (strstr(playlist, "did not find station with matching id")) {
-	    if (strstr(playlist, "did not find station")) {
-	      playlist = NULL;
-	      if(!strstr(item_url,".pls") && !strstr(item_url,".m3u")) {
-		//printf("\nDid NOT find station.  Using item_url.\n");
-		//sprintf(url,"[playlist]\nFile1=%s\n",item_url);
-		sprintf(pls_url,"%s\n",item_url); // Just a link should work for m3u file...
-		playlist = pls_url;
-	      }
-	      else {
-		//printf("\nDid NOT find station.  Fetching item_url.\n");
-		if (strstr(item_url,".pls")) 
-		  sprintf(ext, ".pls"); // item_url has .pls extension, so output should too.
-
-		/* Start over */
-		curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
-		free(chunk.memory);
-		chunk.memory = (char *)malloc(1);
-		chunk.size = 0;
-		
-		curl_global_init(CURL_GLOBAL_ALL);
-		curl_handle = curl_easy_init();
-		curl_easy_setopt(curl_handle, CURLOPT_URL,item_url);
-		curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-		curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-		curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-		res = curl_easy_perform(curl_handle);
-		if(res != CURLE_OK) {
-		  fprintf(stderr, "curl_easy_perform() failed: %s\n",curl_easy_strerror(res));
-		}
-		else {
-		  //printf("%d; %s\n",chunk.size,chunk.memory);
-		  playlist = chunk.memory;
-		}
-	      }
+	  //*****************************************
+	  // Verify we got a playlist.  If not, try the url from the big list.
+	  playlist = chunk.memory;
+	  if (strstr(playlist, "did not find station")) { //"did not find station with matching id"
+	    playlist = NULL;
+	    if(!strstr(item_url,".pls") && !strstr(item_url,".m3u")) {
+	      //printf("\nDid NOT find station.  Using item_url.\n");
+	      //sprintf(url,"[playlist]\nFile1=%s\n",item_url);
+	      sprintf(pls_url,"%s\n",item_url); // Just a link should work for m3u file...
+	      playlist = pls_url;
 	    }
-	    //************************************************************
-	    // NOTE: This might be a good piece to break off into a new saveurl() fn.
-	    //************************************************************
-	    if (playlist){ // Fix the filename and then save the playlist (if we got one).
-	      if (U2L)
-		utf8tolatin(name);
-	      for (s = strpbrk(name, "\""); s; s = strpbrk(s, "\""))
-		*s = '-'; // Quotes inside strings make for ugly filenames.
-	      for (s = strpbrk(name, " "); s; s = strpbrk(s, " "))
-		*s = '_'; // Remove spaces from filenames.
-              for (s=strpbrk(name,"'`;()&|\\/"); s; s=strpbrk(s,"'`;()&|\\/"))
-                  *s = '-'; // Remove other bad chars from filenames.
-
-	      // Loop through destinations and save the playlist
-	      //printf("Loop through destfiles/dirs and save the playlist\n");
-	      for (i=0; i < destnum; i++) {
-		struct stat path_stat;
-		int fileexists = (-1 != access(dest[i], F_OK));
-
-		destfile = dest[i];
-		//printf("dest[%d] = %s (exists = %d)\n", i, destfile, fileexists);
-
-		if (fileexists && (0 == stat(destfile, &path_stat)) && S_ISDIR(path_stat.st_mode)) { 
-		  //printf("Found directory\n");
-		  // If directory, create a new file.
-		  sprintf(buff, "%s/%s%s",destfile, name, ext);
-		  if (fp = fopen(buff, "w")){
-		    fprintf(fp, playlist); 
-		    fclose(fp);
-		  }
-		  //printf("Make new file %s\n",buff);
-		}
-		else { // destfile is a file.  Append to it in proper format.
-		  char *p = playlist;
-		  
-		  if (fileexists) {// We must append, and maybe strip some things.
-		    //printf("Append to file %s\n",destfile);
-		    if (strstr(destfile,".m3u")) {
-		      if (!strcmp(ext, ".m3u")) {
-			//if (s = strstr(playlist,"#EXTM3U")) p = s+7;
-			if (s = strstr(playlist,"#EXTINF:")) p = s;
-		      }
-		      // Just grab the urls.  Fix this to handle multiple urls.
-		      else if (s = strstr(playlist,"http")) p = s;
-		    }
-		    else { // Appending to a .pls file
-		      if (!strcmp(ext, ".pls")) {
-			if (s = strstr(playlist,"File1=http")) p = s;
-		      }
-		      else { // Appending to .pls, but we fetched .m3u (FIXME)
-			if (s = strstr(playlist,"http")) p = s;
-		      }
-		    }
-		  }
-		  else { // (FIXME)
-		    //printf("Create file %s\n",destfile);
-		    // For now, just create new file and dump whatever format we got in it.
-		  }
-		  //printf("Opening %s\n",destfile);
-		  if (fp = fopen(destfile, "a")){
-		    //printf("Writing %s\n",p);
-		    fprintf(fp, p); 
-		    fclose(fp);
-		  }
-		}
-	      }
-	    }	
+	    else {
+	      //printf("\nDid NOT find station.  Fetching item_url.\n");
+	      if (strstr(item_url,".pls")) 
+		sprintf(ext, ".pls"); // item_url has .pls extension, so output should too.
+	      
+	      /* Start over */
+	      curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
+	      free(chunk.memory);
+	      if (CURLE_OK != do_curl(item_url))
+		continue;
+	      //printf("%d; %s\n",chunk.size,chunk.memory);
+	      playlist = chunk.memory;
+	    }
 	  }
+	  
+	  //************ Save the playlist **********
+	  if (playlist){ // Fix the filename and then save the playlist (if we got one).
+	    saveurl(name, playlist);
+	  }	
+	  sprintf(ext, ".m3u"); // Restore default .m3u file extension, just in case.
+	  //*****************************************
 	}
       }
     }
+
+
+
     if (json) 
       cJSON_Delete(json);
   }
@@ -503,25 +499,12 @@ int get_url(char *the_url) {
 /************************************************/
 int get_srch_str_from_list(char *the_url) {
   int retval = 0;
-  CURL *curl_handle;
-  CURLcode res;
   char *s, *playlist;
-  struct MemoryStruct chunk;
-  chunk.memory = (char *)malloc(1); /* will be grown as needed by WriteMemoryCallback() */ 
-  chunk.size = 0; /* no data at this point */
-  //printf("\nURL = %s\n\n", url);
-  curl_global_init(CURL_GLOBAL_ALL);
-  curl_handle = curl_easy_init();
-  curl_easy_setopt(curl_handle, CURLOPT_URL,the_url);
-  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-  res = curl_easy_perform(curl_handle);
+  
   cmd = NULL; // Do not free cmd when done unless we malloc for station pick dialog.
-  if(res != CURLE_OK) {
-    fprintf(stderr, "curl_easy_perform() failed: %s\n",curl_easy_strerror(res));
-  }
-  else if (chunk.size > 0) {
+  if ((CURLE_OK != do_curl(the_url)) || (chunk.size <= 0))
+    retval = 0;
+  else {
     cJSON *json = cJSON_Parse(chunk.memory); 
     int n = 0;
     //printf("%s\n",chunk.memory); exit(0);
