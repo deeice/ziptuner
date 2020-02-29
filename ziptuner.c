@@ -162,7 +162,7 @@ void playit(char * item_url, char *codec)
   int j;
   char *playcmd = play; // Start with default play command.
   
-  // If we have a codec then check for a matching play command.
+  // If we know the codec then check for a matching play command.
   if (codec != NULL)
   {
     for (j=0; j<strlen(codec); j++)
@@ -176,9 +176,11 @@ void playit(char * item_url, char *codec)
       }
     }
   }
-  
+
+  // Relocate playcmd into buff so we can add playlist (or url) before launch.
   strcpy(buff, playcmd);
   playcmd = buff;
+  
   // If its a stream and not a playlist then...
   if (!(strstr(item_url,".m3u") || strstr(item_url,".pls"))) {
     char *p = strstr(playcmd,"-@");      // remove mpg123 arg that says its a playlist.
@@ -187,12 +189,14 @@ void playit(char * item_url, char *codec)
     if (p = strstr(playcmd,"-playlist")) // remove mplayer arg that says its a playlist.
       for (j=0; j<9; j++) p[j] = ' '; 
   }
+  
   //printf ("\n%s \"%s\"\n", playcmd, item_url);
-  sprintf(buff+strlen(buff), " \"%s\" &", item_url);
+
+  // Launch the player, after stopping any currently running player first.
+  sprintf(playcmd+strlen(playcmd), " \"%s\" &", item_url);
   if (stop)
     system ( stop ); // This lets us kill any player, if multiple available.
-  system ( buff );
-  //printf ("\n%s\n", buff); exit(0);
+  system ( playcmd );
 }
 
 /************************************************/
@@ -402,6 +406,9 @@ int get_url(char *the_url) {
 		}
 	      }
 	    }
+	    //************************************************************
+	    // NOTE: This might be a good piece to break off into a new saveurl() fn.
+	    //************************************************************
 	    if (playlist){ // Fix the filename and then save the playlist (if we got one).
 	      if (U2L)
 		utf8tolatin(name);
