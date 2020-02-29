@@ -5,6 +5,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <string.h>
+#include <ctype.h>
 #include <curl/curl.h>
 
 #include <sys/types.h>
@@ -74,7 +75,7 @@ char *cmd = cmd_out;
 
 char ext[32] = ".m3u";
 
-FILE *fd;
+FILE *fp;
 char buff[256];
 
 char *play = NULL; // mpg123tty4
@@ -141,7 +142,7 @@ char *utf8tolatin(char *s) {
 }
 
 /************************************************/
-gotnone(void) {
+void gotnone(void) {
   //printf("messagebox Got nothing\n");
   cmd = cmd_out;
   sprintf(cmd, "dialog --clear --title \"Sorry.\" ");
@@ -153,6 +154,45 @@ gotnone(void) {
   sprintf(cmd+strlen(cmd)," %d %d", 8, 20);
 #endif
   system ( cmd ) ;
+}
+
+/************************************************/
+void playit(char * item_url, char *codec)
+{
+  int j;
+  char *playcmd = play; // Start with default play command.
+  
+  // If we have a codec then check for a matching play command.
+  if (codec != NULL)
+  {
+    for (j=0; j<strlen(codec); j++)
+      codec[j] = tolower(codec[j]);
+    // Do strncmp on codecs so aac can cover both aac and aac+
+    // Also strncmp("", s, 0) will  match anything so we can have a fallback codec.
+    for (j=0; j<np; j++) { // look for a codec match in the list of players.
+      if (!strncmp(codecs[j], codec, strlen(codecs[j]))){
+	playcmd = players[j];
+	break;
+      }
+    }
+  }
+  
+  strcpy(buff, playcmd);
+  playcmd = buff;
+  // If its a stream and not a playlist then...
+  if (!(strstr(item_url,".m3u") || strstr(item_url,".pls"))) {
+    char *p = strstr(playcmd,"-@");      // remove mpg123 arg that says its a playlist.
+    if (p) 
+      for (j=0; j<2; j++) p[j] = ' '; 
+    if (p = strstr(playcmd,"-playlist")) // remove mplayer arg that says its a playlist.
+      for (j=0; j<9; j++) p[j] = ' '; 
+  }
+  //printf ("\n%s \"%s\"\n", playcmd, item_url);
+  sprintf(buff+strlen(buff), " \"%s\" &", item_url);
+  if (stop)
+    system ( stop ); // This lets us kill any player, if multiple available.
+  system ( buff );
+  //printf ("\n%s\n", buff); exit(0);
 }
 
 /************************************************/
@@ -237,11 +277,11 @@ int get_url(char *the_url) {
 	  *s = '-'; // Quotes inside strings confuse Dialog.
 	if (U2L) {
 #if 0
-	  if (fd = fopen("utf2lat.txt", "a")){
-	    fprintf(fd, "%s\n",name); 
+	  if (fp = fopen("utf2lat.txt", "a")){
+	    fprintf(fp, "%s\n",name); 
 	    utf8tolatin(name);
-	    fprintf(fd, "%s\n",name); 
-	    fclose(fd);
+	    fprintf(fp, "%s\n",name); 
+	    fclose(fp);
 	  }
 	  else 
 #endif
@@ -253,13 +293,13 @@ int get_url(char *the_url) {
       //printf("\n\%s\n",cmd); exit (0);
       strcat(cmd, " 2>/tmp/ziptuner.tmp");
 #if 0      
-      if ((fd = fopen("response.json", "w"))){
-	fprintf(fd,"found %d tags\n",n);
-	fprintf(fd, chunk.memory); 
-	fprintf(fd,"\n\n");
-	fprintf(fd, cmd); 
-	fprintf(fd,"\n");
-	fclose(fd);
+      if ((fp = fopen("response.json", "w"))){
+	fprintf(fp,"found %d tags\n",n);
+	fprintf(fp, chunk.memory); 
+	fprintf(fp,"\n\n");
+	fprintf(fp, cmd); 
+	fprintf(fp,"\n");
+	fclose(fp);
       }
 #endif
       while (rerun) {
@@ -281,10 +321,10 @@ int get_url(char *the_url) {
 	  continue;
 	  }
 	buff[0] = 0;
-	if (fd = fopen("/tmp/ziptuner.tmp", "r")) {
-  	  while (fgets(buff, 255, fd) != NULL)
+	if (fp = fopen("/tmp/ziptuner.tmp", "r")) {
+  	  while (fgets(buff, 255, fp) != NULL)
 	    {}
- 	  fclose(fd);
+ 	  fclose(fp);
 	}
 	if (1 == sscanf(buff, "%d", &i)){
 	  cJSON *item = cJSON_GetArrayItem(json, i-1);
@@ -293,46 +333,13 @@ int get_url(char *the_url) {
 	  char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
 	  char *codec = cJSON_GetObjectItem(item,"codec")->valuestring;
 	  previtem = i;
-	  if (fd = fopen("ziptuner.item", "w")){
-	    fprintf(fd, "%d", previtem); 
-	    fclose(fd);
+	  if (fp = fopen("ziptuner.item", "w")){
+	    fprintf(fp, "%d", previtem); 
+	    fclose(fp);
 	  }
 	  /* If we hit play, play the playlist in the background and rerun the list. */
           if (play && (choice == 0)) {
-	    int j;
-	    char *playcmd = play;
-	    for (j=0; j<strlen(codec); j++)
-	      codec[j] = tolower(codec[j]);
-	    // Do strncmp on codecs so aac can cover both aac and aac+
-	    // Also strncmp("", s, 0) will  match anything so we can have a fallback codec.
-	    for (j=0; j<np; j++) { // look for a codec match in the list of players.
-	      if (!strncmp(codecs[j], codec, strlen(codecs[j]))){
-		playcmd = players[j];
-		break;
-	      }
-	    }
-	    strcpy(buff, playcmd);
-	    playcmd = buff;
-	    // If its a stream and not a playlist then...
-	    if (!(strstr(item_url,".m3u") || strstr(item_url,".pls"))) {
-	      char *p = strstr(playcmd,"-@");      // remove mpg123 arg that says its a playlist.
-	      if (p) 
-		for (j=0; j<2; j++) p[j] = ' '; 
-	      if (p = strstr(playcmd,"-playlist")) // remove mplayer arg that says its a playlist.
-		for (j=0; j<9; j++) p[j] = ' '; 
-	    }
-	    //printf ("\n%s \"%s\"\n", playcmd, item_url);
-            sprintf(buff+strlen(buff), " \"%s\" &", item_url);
-	    if (stop)
-	      system ( stop ); // This lets us kill any player, if multiple available.
-            system ( buff );
-	    //printf ("\n%s\n", buff); exit(0);
-#if 0
-	    if (fd = fopen("play.url", "w")){
-	      fprintf(fd, buff); 
-	      fclose(fd);
-	    }
-#endif
+	    playit(item_url, codec);
 	    rerun = 1;
 	    continue;
 	  }
@@ -418,9 +425,9 @@ int get_url(char *the_url) {
 		  //printf("Found directory\n");
 		  // If directory, create a new file.
 		  sprintf(buff, "%s/%s%s",destfile, name, ext);
-		  if (fd = fopen(buff, "w")){
-		    fprintf(fd, playlist); 
-		    fclose(fd);
+		  if (fp = fopen(buff, "w")){
+		    fprintf(fp, playlist); 
+		    fclose(fp);
 		  }
 		  //printf("Make new file %s\n",buff);
 		}
@@ -451,10 +458,10 @@ int get_url(char *the_url) {
 		    // For now, just create new file and dump whatever format we got in it.
 		  }
 		  //printf("Opening %s\n",destfile);
-		  if (fd = fopen(destfile, "a")){
+		  if (fp = fopen(destfile, "a")){
 		    //printf("Writing %s\n",p);
-		    fprintf(fd, p); 
-		    fclose(fd);
+		    fprintf(fp, p); 
+		    fclose(fp);
 		  }
 		}
 	      }
@@ -548,8 +555,8 @@ int get_srch_str_from_list(char *the_url) {
       //printf("%d bogus tags\n",j);
 
       // Need to get result and store it in srch_str;
-      if (fd = fopen("/tmp/ziptuner.tmp", "r")) {
-	if (1 == fscanf(fd, "%d", &i)) {
+      if (fp = fopen("/tmp/ziptuner.tmp", "r")) {
+	if (1 == fscanf(fp, "%d", &i)) {
 	  cJSON *item = cJSON_GetArrayItem(json, i-1);
 	  char *name = cJSON_GetObjectItem(item,"name")->valuestring;
 	  strcpy(srch_str, name);
@@ -560,7 +567,7 @@ int get_srch_str_from_list(char *the_url) {
 	    retval = 1;
 	  }
 	}
-	fclose(fd);
+	fclose(fp);
       }
     }
   }
@@ -620,6 +627,7 @@ void get_favs()
   //       Then I can reuse all the play/stop/quit code.  But playlist is a file, not an url.
   //       or can I pass players an url with file://.foo.m3u or something like that?
   int rerun;
+  FILE *fp; 
   DIR *dir;
   struct dirent *dent;
   char *s;
@@ -668,8 +676,12 @@ void get_favs()
       continue;
     if (0 != stat(destfile, &path_stat))
       continue;
-    if (!S_ISDIR(path_stat.st_mode))
+    if (!S_ISDIR(path_stat.st_mode)) {
       dir = NULL;
+      if (fp = fopen(destfile, "r")){
+      }
+      else continue;
+    }
     else {
       //printf("Found directory\n");
       dir = opendir(destfile);
@@ -688,6 +700,18 @@ void get_favs()
 	destfile = dent->d_name;
 	strcpy(pls_url, srch_url);
 	strcat(pls_url, destfile);
+      }
+      else { // dest is a file, not a dir.
+	// Need some code to dig into the file instead of the dir
+	// Open the file and scan for names after #EXTINF: and urls on the next line.
+	// The following code only works for dirs.
+	if (fgets(buff, 255, fp) == NULL)
+	  break;
+	//if (p = strstr(buff, "#EXTINF:"))
+	//  strcpy(pls_url, p);
+	if (fgets(buff, 255, fp) == NULL)
+	  break;
+	// Make everything after strcpy(buff, destfile) below a fn called add_station()
       }
       if (strstr(destfile, ".m3u") || strstr(destfile, ".pls")){
 	strcpy(buff, destfile);
@@ -710,8 +734,11 @@ void get_favs()
       } 
     } while (dir && ((dent = readdir(dir)) != NULL));
     names[i] = NULL;
-    
-    closedir(dir);
+
+    if (dir)
+      closedir(dir);
+    else
+      fclose(fp);
   }
       
   if (i == 0) // Give up if no saved stations found.
@@ -748,12 +775,12 @@ void get_favs()
     }
 
     // Need to get result and store it in previtem
-    if (fd = fopen("/tmp/ziptuner.tmp", "r")) {
-      if (1 == fscanf(fd, "%d", &i)) {
+    if (fp = fopen("/tmp/ziptuner.tmp", "r")) {
+      if (1 == fscanf(fp, "%d", &i)) {
 	//printf("item = %d\n",i);
       }
       else continue;
-      fclose(fd);
+      fclose(fp);
     }
     else continue;
 
@@ -766,20 +793,11 @@ void get_favs()
     }
     
     previtem = i;
-    strcpy(buff, names[i-1]);
-    //printf("Playing %s\n", buff);
+    //printf("Playing %s\n", names[i-1]);
 	
     /* If we hit play, play the playlist in the background and rerun the list. */
     if (play && (choice == 0)) {
-      char *playcmd = play;
-      strcpy(buff, playcmd);
-      playcmd = buff;
-      sprintf(buff+strlen(buff), " \"%s\" &", names[previtem-1]);
-      if (stop)
-	system ( stop ); // This lets us kill any player, if multiple available.
-      
-      //printf("\nCMD=%s\n", buff);
-
+      playit(names[i-1], NULL);
       system ( buff ); // Now play the station,
       rerun = 1;       // and redisplay the list in case we want to change it.
       continue;
@@ -883,7 +901,7 @@ int parse_args(int argc, char **argv){
 /************************************************/
 int main(int argc, char **argv){
   char *s;
-  FILE *fd;
+  FILE *fp;
   int i,j;
 
   parse_args(argc, argv);
@@ -936,11 +954,11 @@ int main(int argc, char **argv){
   }
 
   buff[0] = 0;
-  if (fd = fopen("/tmp/ziptuner.tmp", "r"))
+  if (fp = fopen("/tmp/ziptuner.tmp", "r"))
   {
-    while (fgets(buff, 255, fd) != NULL)
+    while (fgets(buff, 255, fp) != NULL)
       {}
-    fclose(fd);
+    fclose(fp);
     //printf("\n\n%s\n",buff);
   }
   if (1 != sscanf(buff, "%d", &i))
@@ -949,20 +967,20 @@ int main(int argc, char **argv){
   // Try to reuse prev search if selected option 0.
   buff[0] = 0;
   if (i == 0) {
-    if (fd = fopen("ziptuner.url", "r")) {
-      while (fgets(buff, 255, fd) != NULL)
+    if (fp = fopen("ziptuner.url", "r")) {
+      while (fgets(buff, 255, fp) != NULL)
 	{}
-      fclose(fd);
+      fclose(fp);
       if (strlen(buff)) {
 	char *p = strrchr(buff, '/');
 	if (p) strcpy(srch_str, ++p);
 	else strcpy(srch_str, "previous search");
 	strcpy(srch_url, buff);
 	// If reusing search, attempt to reuse last item selected as well.
-	if (fd = fopen("ziptuner.item", "r")) {
-	  if (1 == fscanf(fd, "%d", &i))
+	if (fp = fopen("ziptuner.item", "r")) {
+	  if (1 == fscanf(fp, "%d", &i))
 	    previtem = i;
-	  fclose(fd);
+	  fclose(fp);
 	}
       }
     }
@@ -1041,11 +1059,11 @@ int main(int argc, char **argv){
   system ( cmd ) ;
 
   buff[0] = 0;
-  if (fd = fopen("/tmp/ziptuner.tmp", "r"))
+  if (fp = fopen("/tmp/ziptuner.tmp", "r"))
   {
-    while (fgets(buff, 255, fd) != NULL)
+    while (fgets(buff, 255, fp) != NULL)
       {}
-    fclose(fd);
+    fclose(fp);
   }
   //printf("\n\n%s\n",buff);
   //remove("/tmp/ziptuner.tmp");
@@ -1057,9 +1075,9 @@ int main(int argc, char **argv){
     strcat(srch_url, srch_str);
 #if 0 /* NOT the best place to save search url, dont know if its good yet. */
     // Save the station search url for re-use.
-    if (fd = fopen("ziptuner.url", "w")) {
-      fprintf(fd, "%s", srch_url);
-      fclose(fd);
+    if (fp = fopen("ziptuner.url", "w")) {
+      fprintf(fp, "%s", srch_url);
+      fclose(fp);
     }
 #endif
   }
@@ -1079,9 +1097,9 @@ int main(int argc, char **argv){
       }
 #if 1 /* This is the place to save search url, but is srch_url still good? */
       // Save the station search url for re-use.
-      else if (fd = fopen("ziptuner.url", "w")) {
-	fprintf(fd, "%s", srch_url);
-	fclose(fd);
+      else if (fp = fopen("ziptuner.url", "w")) {
+	fprintf(fp, "%s", srch_url);
+	fclose(fp);
       }
 #endif
     }
