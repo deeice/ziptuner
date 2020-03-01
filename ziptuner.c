@@ -588,7 +588,7 @@ int get_srch_str_from_list(char *the_url) {
 /************************************************/
 char *names[256] = {NULL}; // This is the onscreen station names for dialog. 
 char *files[256] = {NULL}; // This is the playlist filenames or url lines.
-char  isdir[256] = {0};     // This tells if the playlist is a directory.
+char  lineN[256] = {0};    // This tells playlist line number (-1 if in a dir)
 
 /************************************************/
 void clean_favs(void) // Cleanup allocated (strdup) strings
@@ -600,28 +600,62 @@ void clean_favs(void) // Cleanup allocated (strdup) strings
       break;
     free(files[i]);
     free(names[i]);
-    isdir[i] = 0;
+    lineN[i] = 0;
   }
   files[0] = NULL;
   names[0] = NULL;
 }
 
 /************************************************/
-// Need some code to dig into the file instead of the dirs
-// Open the file and scan for names after #EXTINF: and urls on the next line.
+// Delete lineN[linenum] and the next line in the file with the url.
+/************************************************/
+void del_fav_in_file(int linenum){
+  char *tmp_pls = "/tmp/ziptuner.pls";
+  FILE *fp; 
+  FILE *FP;
+  int i,j;
+
+  fp = fopen(destfile, "r");
+  if (fp == NULL)
+    return;
+  FP = fopen(tmp_pls, "w");
+  if (FP == NULL)
+    return;
+  i = lineN[linenum]; // Get the line number in the file for this station.
+  for (j=0; fgets(buff, 255, fp) != NULL; j++)
+  {
+    if ((j < i) || (j > (i+1)))
+      fputs(buff, FP);
+    //else
+    //  fputs("\n", FP); // replace with empty line, if want to check it.
+  }
+  fclose(fp);
+  fclose(FP);
+
+  // Now replace destfile with the copy.
+  unlink(destfile);
+  rename(tmp_pls, destfile);
+}
+
+/************************************************/
+// Open .m3u file and scan for names after #EXTINF: and urls on the next line.
+//
+// NOTE:  Do I need to support .pls files here?  Sample entry:
+//    File2=http://stream2.streamq.net:8020/  
+//    Title2=This is the name of the station
 /************************************************/
 int get_favs_from_file(void)
 {
   FILE *fp; 
   char *p,*s;
-  int j,i = 0;
+  int i,j,k;
   
   //printf("Found playlist file\n");
 
   fp = fopen(destfile, "r");
   if (fp == NULL)
     return 0;
-  
+  i = k = 0;
   while (fgets(buff, 255, fp) != NULL)
   {
     // NOTE: After #EXTINF: should be "nnn,StationName" (nnn is play time secs)
@@ -639,9 +673,10 @@ int get_favs_from_file(void)
 	*s = 0;
       names[i] = strdup(pls_url);
       files[i] = strdup(buff);
-      isdir[i] = 0;
+      lineN[i] = k++;               // Save the Line Number in the file.
       if (++i == 255) break;
     }
+    k++;
   }
   fclose(fp);
 
@@ -679,7 +714,7 @@ int get_favs_from_dir(void)
     if (strstr(destfile, ".m3u") || strstr(destfile, ".pls")){
       strcpy(buff, destfile);
       files[i] = strdup(pls_url); // Save the station playlist Filename.
-      isdir[i] = 1;           // And remember its in a playlist dir (not file)
+      lineN[i] = -1;          // And remember its in a playlist dir (not file)
       if ((s = strstr(buff, ".m3u")) || (s = strstr(buff, ".pls")))
 	*s = 0;
       for (s = strpbrk(buff, "_"); s; s = strpbrk(s, "_"))
@@ -794,15 +829,21 @@ void get_favs()
     }
     else continue;
 
+#if 0
+    if (fp = fopen("zipplay.tmp", "w")) {
+      fprintf(fp,"item = %d\n",i-1);
+      fprintf(fp,"Name <%s>\n", names[i-1]);
+      fprintf(fp,"Playing <%s>\n", files[i-1]);
+      fprintf(fp,"line %d\n", lineN[i-1]);
+      fclose(fp);
+    }
+#endif
+    
     if (choice == 0x300) { // Extra button means delete
-      /*  (need to write some code to find and delete this playlist) */
-      /* Probably need to rescan dir (or remove deleted from array before rerun). */
-
-      // NOTE: This ONLY deletes playlist files, not entries in a playlist file.
-      if (isdir[i-1])
+      if (lineN[i-1] == -1)
 	unlink(files[i-1]);
       else{
-	// del_fav_in_file(i-1);
+	del_fav_in_file(i-1);
       }
       clean_favs();
       goto scanfavs;
