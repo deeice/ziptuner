@@ -86,6 +86,7 @@ int np = 0;
 int choice = 0;
 int U2L = 0;
 int previtem = 0;
+int favnum = -1;
 	
 /************************************************/
 static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp) {
@@ -742,7 +743,7 @@ void get_favs()
   //printf("get favs\n");
   cmd = cmd_out;
 
- scanfavs:
+scanfavs:
   rerun = 1;
   i = 0;
   item = 0;
@@ -796,6 +797,12 @@ void get_favs()
 
   //printf("After srch, dest[%d] = <%s>\n", j, destfile);
   
+  if (favnum >= 0) {// Now play the station if requested on cmdline.
+    previtem = favnum;
+    playit(files[previtem-1], NULL); 
+    favnum = -1;
+  }
+
   //*****************************
   while (rerun) {
     rerun = 0; // Only rerun if we hit play or stop.
@@ -811,6 +818,9 @@ void get_favs()
       system ( stop ) ;
       //printf("\n\n%s\n",stop);exit(0);
       rerun = 1;
+      // Forget saved favorite.
+      // Use stop from main menu (or other) to retain favorite.
+      unlink("ziptuner.fav");
       continue;
     }
     if (choice == 0x100) {
@@ -829,6 +839,10 @@ void get_favs()
     }
     else continue;
 
+    // Remember the last fav 
+    unlink("ziptuner.fav"); 
+    rename("/tmp/ziptuner.tmp", "ziptuner.fav");
+    
 #if 0
     if (fp = fopen("zipplay.tmp", "w")) {
       fprintf(fp,"item = %d\n",i-1);
@@ -864,6 +878,8 @@ void get_favs()
 
 /************************************************/
 int parse_args(int argc, char **argv){
+  FILE *fp;
+  int i;
   char *s;
 
   /* Get terminal size for better dialog size estimates. */
@@ -899,6 +915,13 @@ int parse_args(int argc, char **argv){
     } 
     else switch(c)
     {
+    case 'a':
+      if (fp = fopen("ziptuner.fav", "r")) {
+	if (1 == fscanf(fp, "%d", &i))
+	  favnum = i;
+	fclose(fp);
+      }
+      break;
     case 'p':
       if (argc > 1){
 	play = *++argv;
@@ -923,6 +946,7 @@ int parse_args(int argc, char **argv){
 	     "  -p sets a command for the play button.\n"
 	     "  -s sets a command for the stop button.\n"
 	     "  -u Convert Latin1 UTF-8 chars to iso-8859-1\n"
+	     "  -a auto-resume (playing favorite).\n"
 	     "  Multiple destinations allowed (files or folders)\n"
 	     "\n"
 	     "eg:\n  "
@@ -961,6 +985,9 @@ int main(int argc, char **argv){
 
   parse_args(argc, argv);
 
+  if (favnum >= 0)
+    get_favs();
+  
   // Main loop of main menu (need to make it a loop instead of a goto)
  retry:
   j=play?1:0; // Add an extra line to menu for favs, if play is available.
