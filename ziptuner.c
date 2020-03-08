@@ -249,6 +249,7 @@ void saveurl(char *filename, char *playlist)
 	  else if (s = strstr(playlist,"http")) p = s;
 	}
 	else { // Appending to a .pls file
+	  // Get 1st stream.  NOTE: Should write FileN below to append (N=?)
 	  if (!strcmp(ext, ".pls")) {
 	    if (s = strstr(playlist,"File1=http")) p = s;
 	  }
@@ -609,12 +610,16 @@ void clean_favs(void) // Cleanup allocated (strdup) strings
 
 /************************************************/
 // Delete lineN[linenum] and the next line in the file with the url.
+//
+// NOTE:  I need to support .pls files here.  Sample entry:
+//    File2=http://stream2.streamq.net:8020/  
+//    Title2=This is the name of the station
 /************************************************/
-void del_fav_in_file(int linenum){
+void del_fav_in_file(int station){
   char *tmp_pls = "/tmp/ziptuner.pls";
   FILE *fp; 
   FILE *FP;
-  int i,j;
+  int i,j,k,n,pls;
 
   fp = fopen(destfile, "r");
   if (fp == NULL)
@@ -622,13 +627,23 @@ void del_fav_in_file(int linenum){
   FP = fopen(tmp_pls, "w");
   if (FP == NULL)
     return;
-  i = lineN[linenum]; // Get the line number in the file for this station.
+  n = lineN[station]; // Get the line number in the file for this station.
+  i = n+1;            // Estimate the last line of the station entry.
   for (j=0; fgets(buff, 255, fp) != NULL; j++)
   {
-    if ((j < i) || (j > (i+1)))
+    // NOTE: .pls is 1 line + 2 optional. FileN=, TitleN=, LengthN= (and blank line?)
+    // Maybe just skip 3. That's ok for all but FileN only, and 2 lines w/ no blank. 
+    
+    // If .m3u then delete #EXTINF line and next line with URL
+    if ((j < n) || (j > i)) 
       fputs(buff, FP);
-    //else
-    //  fputs("\n", FP); // replace with empty line, if want to check it.
+    else if (j == n) // First line of entry, Check buff for .pls or .m3u format 
+      pls = (2 == sscanf(buff, " File%d=%[^\t\n\r]",&k,srch_url));
+    else if (pls){   // Not the first line for this .pls station, is it last?
+      if (2 == sscanf(buff, " Title%d=%[^\t\n\r]",&k,srch_url)) i++;
+      else if (2 == sscanf(buff, " Length%d=%[^\t\n\r]",&k,srch_url)) i++;
+      else if (1 == sscanf(buff, " %[^\t\n\r]",srch_url)) fputs(buff, FP);
+    }
   }
   fclose(fp);
   fclose(FP);
@@ -639,11 +654,7 @@ void del_fav_in_file(int linenum){
 }
 
 /************************************************/
-// Open .m3u file and scan for names after #EXTINF: and urls on the next line.
-//
-// NOTE:  Do I need to support .pls files here?  Sample entry:
-//    File2=http://stream2.streamq.net:8020/  
-//    Title2=This is the name of the station
+// Open .m3u or .pls file and scan for station urls and titles
 /************************************************/
 int get_favs_from_file(void)
 {
@@ -652,28 +663,29 @@ int get_favs_from_file(void)
   int i,j,k;
   
   //printf("Found playlist file\n");
-
   fp = fopen(destfile, "r");
   if (fp == NULL)
     return 0;
   i = k = 0;
   while (fgets(buff, 255, fp) != NULL)
   {
-    // NOTE: After #EXTINF: should be "nnn,StationName" (nnn is play time secs)
-    if (p = strstr(buff, "#EXTINF:")){
-      p += 8;
-      if (s = strchr(p, '\n'))      // Snip trailing linefeed.
-	*s = 0;
-      j = strspn(p, " 01234567");   // Skip timestamp and comma.
-      if (p[j] == ',')
-	p = p + j+1;
-      strcpy(pls_url, p);
+    // .pls -- 
+    if (2 == sscanf(buff, " File%d=%[^\t\n\r]",&j,pls_url)){
+      strcpy(srch_url,pls_url);
+      if (fgets(buff, 255, fp) != NULL)
+	sscanf(buff, " Title%d=%[^\t\n\r]",&j,srch_url);
+      files[i] = strdup(pls_url);
+      names[i] = strdup(srch_url);
+      lineN[i] = k++;               // Save the Line Number in the file.
+      if (++i == 255) break;
+    }
+    // .mru -- After #EXTINF: should be "nnn,StationName" (nnn is play time secs)
+    if (2 == sscanf(buff, " #EXTINF:%d,%[^\t\n\r]",&j,&pls_url)){
       if (fgets(buff, 255, fp) == NULL)
 	break;
-      if (s = strchr(buff, '\n'))   // Snip trailing linefeed.
-	*s = 0;
+      sscanf(buff, " %[^\t\n\r]",srch_url);
       names[i] = strdup(pls_url);
-      files[i] = strdup(buff);
+      files[i] = strdup(srch_url);
       lineN[i] = k++;               // Save the Line Number in the file.
       if (++i == 255) break;
     }
