@@ -200,13 +200,24 @@ void playit(char * item_url, char *codec)
   system ( playcmd );
 }
 
+// /************************************************/
+// char *nextline(char *s)
+// {
+//   s += strcspn(s,"\r\n"); // Skip to end of srch_url
+//   s += strspn(s,"\r\n");  // Skip past any CR LF chars.
+//   return s;
+// }
+
+void add_fav_to_file(char *destfile, char *url, char* name);
+
 /************************************************/
 void saveurl(char *filename, char *playlist)
 {
   char *s;
   int i;
   FILE *fp;
-  
+
+  strcpy(srch_url, filename); // Save unmangled filename?
   if (U2L)
     utf8tolatin(filename);
   for (s = strpbrk(filename, "\""); s; s = strpbrk(s, "\""))
@@ -225,9 +236,10 @@ void saveurl(char *filename, char *playlist)
     destfile = dest[i];
     //printf("dest[%d] = %s (exists = %d)\n", i, destfile, fileexists);
     
+    //*****************************
+    // If directory, create a new file in that directory for this playlist.
     if (fileexists && (0 == stat(destfile, &path_stat)) && S_ISDIR(path_stat.st_mode)) { 
       //printf("Found directory\n");
-      // If directory, create a new file.
       sprintf(buff, "%s/%s%s",destfile, filename, ext);
       if (fp = fopen(buff, "w")){
 	fprintf(fp, playlist); 
@@ -235,39 +247,47 @@ void saveurl(char *filename, char *playlist)
       }
       //printf("Make new file %s\n",buff);
     }
+    //*****************************
     else { // destfile is a file.  Append to it in proper format.
-      char *p = playlist;
+      int j;
+      //printf("Append to file %s\n",destfile);
+      // Just grab the urls.  Fix this to handle multiple urls.
+      if ((s = strstr(playlist,"#EXTINF:")) && // its a .mru file.  Get 1st stream.
+	  (2 == sscanf(s, " #EXTINF:%d,%[^\t\n\r]",&j,srch_url))) {
+	s += strcspn(s,"\r\n"); // Skip to end of line.
+	s += strspn(s,"\r\n");  // Skip past any CR LF chars.
+	sscanf(s, " %[^\t\n\r]",pls_url);
+      }
+      else if ((s = strstr(playlist,"File1=")) && // its a .pls file.  Get 1st stream.
+	       (2 == sscanf(s, " File%d=%[^\t\n\r]",&j,pls_url))) {
+	s += strcspn(s,"\r\n"); // Skip to end of line.
+	s += strspn(s,"\r\n");  // Skip past any CR LF chars.
+	sscanf(buff, " Title%d=%[^\t\n\r]",&j,srch_url);
+      }
+      else { // Just look for an URL
+	j = 511;
+	if ((s = strstr(playlist,"http://")) ||
+	    (s = strstr(playlist,"rtsp://")) ||
+	    (s = strstr(playlist,"https://")))
+	  j = strcspn(s,"\r\n"); // find end of line.
+	else
+	  s = playlist;
+	strncpy(pls_url,s,j);
+	pls_url[j] = 0;
+      }
+      // Should now have both name and url (name may be NULL for .pls)
       
-      if (fileexists) {// We must append, and maybe strip some things.
-	//printf("Append to file %s\n",destfile);
-	if (strstr(destfile,".m3u")) {
-	  if (!strcmp(ext, ".m3u")) {
-	    //if (s = strstr(playlist,"#EXTM3U")) p = s+7;
-	    if (s = strstr(playlist,"#EXTINF:")) p = s;
-	  }
-	  // Just grab the urls.  Fix this to handle multiple urls.
-	  else if (s = strstr(playlist,"http")) p = s;
-	}
-	else { // Appending to a .pls file
-	  // Get 1st stream.  NOTE: Should write FileN below to append (N=?)
-	  if (!strcmp(ext, ".pls")) {
-	    if (s = strstr(playlist,"File1=http")) p = s;
-	  }
-	  else { // Appending to .pls, but we fetched .m3u (FIXME)
-	    if (s = strstr(playlist,"http")) p = s;
-	  }
-	}
-      }
-      else { // (FIXME)
+      if (!fileexists) { // Make a new file if it doesn't exist yet.
 	//printf("Create file %s\n",destfile);
-	// For now, just create new file and dump whatever format we got in it.
+	if (fp = fopen(destfile, "w")){
+	  if (strstr(destfile,".pls"))
+	    fprintf(fp, "[playlist]\n"); 
+	  fclose(fp);
+	}
       }
-      //printf("Opening %s\n",destfile);
-      if (fp = fopen(destfile, "a")){
-	//printf("Writing %s\n",p);
-	fprintf(fp, p); 
-	fclose(fp);
-      }
+
+      // Only use filename if can't find #EXTINF or Title1=
+      add_fav_to_file(destfile, pls_url, srch_url);
     }
   }
 }
@@ -608,41 +628,102 @@ void clean_favs(void) // Cleanup allocated (strdup) strings
   names[0] = NULL;
 }
 
+char *tmp_pls = "/tmp/ziptuner.pls";
+
 /************************************************/
-// Delete lineN[linenum] and the next line in the file with the url.
-//
-// NOTE:  I need to support .pls files here.  Sample entry:
-//    File2=http://stream2.streamq.net:8020/  
-//    Title2=This is the name of the station
+// Add (append) an item to the end of a .pls or .m3u playlist file.
+/************************************************/
+void add_fav_to_file(char *destfile, char *url, char* name){
+  FILE *fp, *FP;
+  int k = 0;  // j is .pls item number to delete.  k is old .pls item nums.
+  int pls = 0;
+  
+  if (NULL == (fp = fopen(destfile, "r"))) return;
+  if (NULL == (FP = fopen(tmp_pls, "w"))) return;
+
+  // NOTE:  I've seen streaming .pls files where NumberOfEntries=1 preceeds File1= 
+  while (fgets(buff, 255, fp) != NULL)
+  {
+    if (pls){
+      if (strstr(buff, "Version="))
+	break;
+      if (1 != sscanf(buff, " NumberOfEntries=%d",&k)) // Write NumEntries later...
+	fputs(buff, FP);
+      if (2 == sscanf(buff, " File%d=%[^\t\n\r]",&k,srch_str))
+	pls = 1;
+    }
+    else {
+      fputs(buff, FP);
+      pls = (NULL != strstr(buff, "[playlist]")); // Should be 1st line
+    }
+  }
+
+  if (pls) { // Add our FileN to the playlist, and close it up.
+    k = k+1;
+    fprintf(FP,"File%d=%s\n",k,url);
+    fprintf(FP,"Title%d=%s\n",k,name);
+    fprintf(FP,"\n");
+    fprintf(FP,"NumberOfEntries=%d\n",k);
+    if (strstr(buff, "Version="))
+      fprintf(FP, "%s", buff);
+  }
+  else {
+    fprintf(FP,"#EXTINF:1,%s\n",name);
+    fprintf(FP,"%s\n",url);
+  }
+    
+  while (fgets(buff, 255, fp) != NULL)
+    fputs(buff, FP); 
+
+  fclose(fp);
+  fclose(FP);
+
+  // Now replace destfile with the copy.
+  unlink(destfile);
+  rename(tmp_pls, destfile);
+}
+
+/************************************************/
+// Delete an item from a .m3u or .pls playlist file
 /************************************************/
 void del_fav_in_file(int station){
-  char *tmp_pls = "/tmp/ziptuner.pls";
-  FILE *fp; 
-  FILE *FP;
-  int i,j,k,n,pls;
+  FILE *fp, *FP;
+  int i,j,k = 0;  // j is .pls item number to delete.  k is old .pls item nums.
+  int m = 0;      // m is .pls renumber counter (new item numbers)
+  int n, pls = 0;
+  
+  if (NULL == (fp = fopen(destfile, "r"))) return;
+  if (NULL == (FP = fopen(tmp_pls, "w"))) return;
 
-  fp = fopen(destfile, "r");
-  if (fp == NULL)
-    return;
-  FP = fopen(tmp_pls, "w");
-  if (FP == NULL)
-    return;
   n = lineN[station]; // Get the line number in the file for this station.
-  i = n+1;            // Estimate the last line of the station entry.
-  for (j=0; fgets(buff, 255, fp) != NULL; j++)
+  for (i=0; fgets(buff, 255, fp) != NULL; i++)
   {
-    // NOTE: .pls is 1 line + 2 optional. FileN=, TitleN=, LengthN= (and blank line?)
-    // Maybe just skip 3. That's ok for all but FileN only, and 2 lines w/ no blank. 
+    if (pls){ // Skip FileN. Update item nums associated with FileM (M != N) 
+      if (2 == sscanf(buff, " File%d=%[^\t\n\r]",&k,srch_url)){
+	if (i == n) j = k;  // Delete all lines where k = j.
+	else m += 1;        // Otherwise increment the .pls renumber counter.
+	sprintf(buff,"File%d=%s\n",m,srch_url);
+	}
+      else if (2 == sscanf(buff, " Title%d=%[^\t\n\r]",&k,srch_url)) 
+	sprintf(buff,"Title%d=%s\n",m,srch_url);
+      else if (2 == sscanf(buff, " Length%d=%[^\t\n\r]",&k,srch_url))
+	sprintf(buff,"Length%d=%s\n",m,srch_url);
+      // NOTE: Using m assumes NumberOfEntries comes *after* all File items.
+      else if (1 == sscanf(buff, " NumberOfEntries=%d",&k)){
+	sprintf(buff,"NumberOfEntries=%d\n",k-1); // Use k-1 instead of m?
+	j = -1; // This is not part of FileN, so must not skip fputs().
+      }
+      else if (1 == sscanf(buff, " %[^\t\n\r]",srch_url)) 
+	j = -1; // If not known field (or blank line) then done with FileN.
     
+      if (k != j)
+	fputs(buff, FP); // Not part of entry to be deleted, so do fputs().
+    }
     // If .m3u then delete #EXTINF line and next line with URL
-    if ((j < n) || (j > i)) 
-      fputs(buff, FP);
-    else if (j == n) // First line of entry, Check buff for .pls or .m3u format 
-      pls = (2 == sscanf(buff, " File%d=%[^\t\n\r]",&k,srch_url));
-    else if (pls){   // Not the first line for this .pls station, is it last?
-      if (2 == sscanf(buff, " Title%d=%[^\t\n\r]",&k,srch_url)) i++;
-      else if (2 == sscanf(buff, " Length%d=%[^\t\n\r]",&k,srch_url)) i++;
-      else if (1 == sscanf(buff, " %[^\t\n\r]",srch_url)) fputs(buff, FP);
+    else if ((i < n) || (i > (n+1))){ 
+      fputs(buff, FP);      // copy line to new file, and check if .pls file.
+      if (pls = (NULL != strstr(buff, "[playlist]"))) // Should be 1st line 
+	j = -1; // Do not skip fputs() until we reach the entry to be deleted.
     }
   }
   fclose(fp);
@@ -680,7 +761,7 @@ int get_favs_from_file(void)
       if (++i == 255) break;
     }
     // .mru -- After #EXTINF: should be "nnn,StationName" (nnn is play time secs)
-    if (2 == sscanf(buff, " #EXTINF:%d,%[^\t\n\r]",&j,&pls_url)){
+    if (2 == sscanf(buff, " #EXTINF:%d,%[^\t\n\r]",&j,pls_url)){
       if (fgets(buff, 255, fp) == NULL)
 	break;
       sscanf(buff, " %[^\t\n\r]",srch_url);
