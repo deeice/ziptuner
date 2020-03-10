@@ -608,9 +608,9 @@ int get_srch_str_from_list(char *the_url) {
   // Make room for 255 favorite stations.  
   // Shouldn't need more than a dozen, but *could* realloc for collectors...
 /************************************************/
-char *names[256] = {NULL}; // This is the onscreen station names for dialog. 
-char *files[256] = {NULL}; // This is the playlist filenames or url lines.
-char  lineN[256] = {0};    // This tells playlist line number (-1 if in a dir)
+char *names[256] = {NULL};   // This is the onscreen station names for dialog. 
+char *files[256] = {NULL};   // This is the playlist filenames or url lines.
+signed char lineN[256] = {0};// This tells playlist line number (-1 if in a dir)
 
 /************************************************/
 void clean_favs(void) // Cleanup allocated (strdup) strings
