@@ -253,7 +253,7 @@ void saveurl(char *filename, char *playlist)
       //printf("Append to file %s\n",destfile);
       // Just grab the urls.  Fix this to handle multiple urls.
       if ((s = strstr(playlist,"#EXTINF:")) && // its a .mru file.  Get 1st stream.
-	  (2 == sscanf(s, " #EXTINF:%d,%[^\t\n\r]",&j,srch_url))) {
+	  (2 == sscanf(s, " #EXTINF:%[^,],%[^\t\n\r]",srch_str,srch_url))) {
 	s += strcspn(s,"\r\n"); // Skip to end of line.
 	s += strspn(s,"\r\n");  // Skip past any CR LF chars.
 	sscanf(s, " %[^\t\n\r]",pls_url);
@@ -761,7 +761,8 @@ int get_favs_from_file(void)
       if (++i == 255) break;
     }
     // .mru -- After #EXTINF: should be "nnn,StationName" (nnn is play time secs)
-    if (2 == sscanf(buff, " #EXTINF:%d,%[^\t\n\r]",&j,pls_url)){
+    //if (2 == sscanf(buff, " #EXTINF:%d,%[^\t\n\r]",&j,pls_url)){
+    if (2 == sscanf(buff, " #EXTINF:%[^,],%[^\t\n\r]",srch_str,pls_url)){
       if (fgets(buff, 255, fp) == NULL)
 	break;
       sscanf(buff, " %[^\t\n\r]",srch_url);
