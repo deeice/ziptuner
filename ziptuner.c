@@ -87,6 +87,7 @@ int choice = 0;
 int U2L = 0;
 int previtem = 0;
 int favnum = -1;
+int nowplaying = -1;
 	
 /************************************************/
 static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp) {
@@ -338,6 +339,7 @@ int get_url(char *the_url) {
       //printf("found %d tags\n",n); exit(0);
       cmd = malloc(chunk.size + strlen(srch_str) + 256); // extra space for "dialog..."
       sprintf(cmd, "dialog --default-item % 10d ", previtem);
+      //sprintf(cmd+strlen(cmd),"--backtitle \"Playing %6d\" ",nowplaying);
       sprintf(cmd+strlen(cmd),"--clear --title \"Pick a station\" ");
       sprintf(cmd+strlen(cmd),"--cancel-label \"Back\" ");
 
@@ -410,6 +412,7 @@ int get_url(char *the_url) {
 	rerun = 0; // Only rerun if we hit play or stop.
 	// Replace beginning of cmd with remembered previous selection.
 	sprintf(cmd, "dialog --default-item % 10d", previtem);
+	//sprintf(cmd+strlen(cmd)," --backtitle \"Playing %6d\"",nowplaying);
 	cmd[strlen(cmd)] = ' ';
 	//printf("\n%s\n", cmd);
 	choice = system ( cmd ) ;
@@ -421,6 +424,7 @@ int get_url(char *the_url) {
 	if (stop && (choice == 0x200)) {
 	  system ( stop ) ;
 	  //printf("\n\n%s\n",stop);exit(0);
+	  nowplaying = -1;
 	  rerun = 1;
 	  continue;
 	  }
@@ -444,13 +448,14 @@ int get_url(char *the_url) {
 	  /* If we hit play, play the playlist in the background and rerun the list. */
           if (play && (choice == 0)) {
 	    playit(item_url, codec);
+	    nowplaying = i;
 	    rerun = 1;
 	    continue;
 	  }
 
 	  /* Did NOT hit play, so we need to fetch the playlist and save it. */
 	  rerun = 1;
-	  sprintf(pls_url, "http://www.radio-browser.info/webservice/v2/m3u/url/%s",id);
+	  sprintf(pls_url, "http://api.radio-browser.info/webservice/v2/m3u/url/%s",id);
 	  /* Start over with curl */
 	  curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
 	  free(chunk.memory);
@@ -508,6 +513,8 @@ int get_url(char *the_url) {
   /* we're done with libcurl, so clean it up */ 
   curl_global_cleanup();
 
+  nowplaying = -1; 
+  
   if (choice == 0x100) {
     //printf("quit\n");
     return 0;
@@ -626,6 +633,8 @@ void clean_favs(void) // Cleanup allocated (strdup) strings
   }
   files[0] = NULL;
   names[0] = NULL;
+
+  nowplaying = -1; // List is empty, so any index into it is no good.
 }
 
 char *tmp_pls = "/tmp/ziptuner.pls";
@@ -842,6 +851,7 @@ scanfavs:
   i = 0;
   item = 0;
   sprintf(cmd, "dialog --default-item % 10d ", previtem);
+  //sprintf(cmd+strlen(cmd),"--backtitle \"Playing %6d\" ",nowplaying);
   sprintf(cmd+strlen(cmd),"--clear --title \"Pick a station\" ");
   sprintf(cmd+strlen(cmd),"--cancel-label \"Back\" ");
   if (play) {
@@ -894,6 +904,7 @@ scanfavs:
   if (favnum >= 0) {// Now play the station if requested on cmdline.
     previtem = favnum;
     playit(files[previtem-1], NULL); 
+    nowplaying = i;
     favnum = -1;
   }
 
@@ -902,6 +913,7 @@ scanfavs:
     rerun = 0; // Only rerun if we hit play or stop.
     // Replace beginning of cmd with remembered previous selection.
     sprintf(cmd, "dialog --default-item % 10d", previtem);
+    //sprintf(cmd+strlen(cmd)," --backtitle \"Playing %6d\"",nowplaying);
     cmd[strlen(cmd)] = ' ';
 
     //printf("\n%s\n", cmd);
@@ -911,6 +923,7 @@ scanfavs:
     if (stop && (choice == 0x200)) { // 0x200=help button
       system ( stop ) ;
       //printf("\n\n%s\n",stop);exit(0);
+      nowplaying = -1;
       rerun = 1;
       // Forget saved favorite.
       // Use stop from main menu (or other) to retain favorite.
@@ -962,6 +975,7 @@ scanfavs:
     /* If we hit play, play the playlist in the background and rerun the list. */
     if (play && (choice == 0)) {
       playit(files[i-1], NULL); // Now play the station,
+      nowplaying = i;
       rerun = 1;       // and redisplay the list in case we want to change it.
       continue;
     }
@@ -1085,7 +1099,7 @@ int main(int argc, char **argv){
   // Main loop of main menu (need to make it a loop instead of a goto)
  retry:
   j=play?1:0; // Add an extra line to menu for favs, if play is available.
-  sprintf(srch_url, "http://www.radio-browser.info/webservice/json/stations/");
+  sprintf(srch_url, "http://api.radio-browser.info/webservice/json/stations/");
   sprintf(cmd, "dialog --clear --title \"Zippy Internet Radio Tuner\" ");
   sprintf(cmd+strlen(cmd),"--cancel-label \"Quit\" ");
   if (stop) { // Use Help button for Stop, else we must swap Extra,Cancel buttons.
@@ -1126,6 +1140,7 @@ int main(int argc, char **argv){
   if (stop && (choice == 0x200)) {
     system ( stop ) ;
     //printf("\n\n%s\n",stop);
+    //nowplaying = -1;
     exit(0);
   }
 
@@ -1164,19 +1179,19 @@ int main(int argc, char **argv){
   else if ((i >= 6) && (i <= 8))  {
     if (i == 6) {
 	strcpy(srch_str, "Countries");
-	strcpy(buff,"http://www.radio-browser.info/webservice/json/countries");
+	strcpy(buff,"http://api.radio-browser.info/webservice/json/countries");
 	strcat(srch_url, "bycountry/");
 	// about 144 name value stationcount (name always seems same as value)
     }
     else if (i == 7) {
 	strcpy(srch_str, "Languages");
-	strcpy(buff,"http://www.radio-browser.info/webservice/json/languages");
+	strcpy(buff,"http://api.radio-browser.info/webservice/json/languages");
 	strcat(srch_url, "bylanguage/");
 	// about 160 name value stationcount (name always seems same as value)
     }
     else if (i == 8) {
 	strcpy(srch_str, "Tags");
-	strcpy(buff,"http://www.radio-browser.info/webservice/json/tags");
+	strcpy(buff,"http://api.radio-browser.info/webservice/json/tags");
 	strcat(srch_url, "bytag/");
 	// about 3000 name value stationcount (name always seems same as value)
 	// but about 1800 are bogus (skip items with stationcount < 2)
