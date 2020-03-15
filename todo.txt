@@ -40,4 +40,4 @@ Try mplayer for play.  See if I need any code changes for that.
      Done.  Added example scripts for VLC and GMU as well.
 
 Add "now playing N" backtitles to the screens with play buttons.
-
+     Done

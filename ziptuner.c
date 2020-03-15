@@ -35,25 +35,25 @@ char pls_url[512] = "";
 
 /*
 First get a list to choose from.
-http://www.radio-browser.info/webservice/json/tags
-http://www.radio-browser.info/webservice/json/stations/bytag
+http://api.radio-browser.info/webservice/json/tags
+http://api.radio-browser.info/webservice/json/stations/bytag
 
-http://www.radio-browser.info/webservice/json/countries
-http://www.radio-browser.info/webservice/json/stations/bycountry/searchterm 
+http://api.radio-browser.info/webservice/json/countries
+http://api.radio-browser.info/webservice/json/stations/bycountry/searchterm 
 
-http://www.radio-browser.info/webservice/json/states/USA/
-http://www.radio-browser.info/webservice/json/stations/bystate/searchterm 
+http://api.radio-browser.info/webservice/json/states/USA/
+http://api.radio-browser.info/webservice/json/stations/bystate/searchterm 
 
-http://www.radio-browser.info/webservice/json/languages
-http://www.radio-browser.info/webservice/json/stations/bylanguage/searchterm 
+http://api.radio-browser.info/webservice/json/languages
+http://api.radio-browser.info/webservice/json/stations/bylanguage/searchterm 
 
-http://www.radio-browser.info/webservice/json/stations/byname/searchterm 
+http://api.radio-browser.info/webservice/json/stations/byname/searchterm 
 
-http://www.radio-browser.info/webservice/json/codecs 
-http://www.radio-browser.info/webservice/json/stations/bycodec/searchterm 
+http://api.radio-browser.info/webservice/json/codecs 
+http://api.radio-browser.info/webservice/json/stations/bycodec/searchterm 
 
-http://www.radio-browser.info/webservice/v2/pls/url/nnnnn
-http://www.radio-browser.info/webservice/v2/m3u/url/nnnnn
+http://api.radio-browser.info/webservice/v2/pls/url/nnnnn
+http://api.radio-browser.info/webservice/v2/m3u/url/nnnnn
 */
 
 // ---------------------------------------------
@@ -426,7 +426,7 @@ int get_url(char *the_url) {
 	  if (!strcmp(codec, "unknown"))
 	    codec[0] = 0;
 	  if (strcmp(bitrate, "0"))
- 	    sprintf(cmd+strlen(cmd),"% 4s % 3s . ",codec,bitrate);
+	    sprintf(cmd+strlen(cmd),"% 4s % 3s . ",codec,bitrate);
 	  else
 	    sprintf(cmd+strlen(cmd),"% 4s     . ",codec);
 #endif
