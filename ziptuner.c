@@ -471,7 +471,15 @@ int get_url(char *the_url) {
 	    fprintf(fp, "%d", previtem); 
 	    fclose(fp);
 	  }
-	  /* If we hit play, play the playlist in the background and rerun the list. */
+#if 1 /* DEBUG */
+	  if (fp = fopen("ziptuner.ntext", "w")){
+	    fprintf(fp, "Name==%s\n", name); 
+	    fprintf(fp, "I-url=%s\n", item_url); 
+	    fprintf(fp, "P-url=%s\n", id); 
+	    fclose(fp);
+	  }
+#endif	  
+	  /* IF we hit play, play the playlist in the background and rerun the list. */
           if (play && (choice == 0)) {
 	    playit(item_url, codec);
 	    nowplaying = i;
@@ -491,7 +499,17 @@ int get_url(char *the_url) {
 	  //*****************************************
 	  // Verify we got a playlist.  If not, try the url from the big list.
 	  playlist = chunk.memory;
-	  if (strstr(playlist, "did not find station")) { //"did not find station with matching id"
+#if 1 /* DEBUG */
+	  if (fp = fopen("ziptuner.ptext", "w")){
+	    fprintf(fp, "%s\n", playlist); 
+	    fclose(fp);
+	  }
+#endif
+	  // NOTE: Is the new api giving me more problems?
+	  // Never noticed a 301 error on the old server...
+	  
+	  if (strstr(playlist, "did not find station") || //"did not find station with matching id"
+	      strstr(playlist, "301 Moved Permanently")) { // Yikes, problems with new api???
 	    playlist = NULL;
 	    if(!strstr(item_url,".pls") && !strstr(item_url,".m3u")) {
 	      //printf("\nDid NOT find station.  Using item_url.\n");
@@ -499,8 +517,8 @@ int get_url(char *the_url) {
 	      sprintf(pls_url,"%s\n",item_url); // Just a link should work for m3u file...
 	      playlist = pls_url;
 	    }
-	    else {
-	      //printf("\nDid NOT find station.  Fetching item_url.\n");
+	    else { // Item url is a playlist, not a stream.  So fetch the contents.
+	      //printf("\nDid NOT find station.  Fetching playlist from item_url.\n");
 	      if (strstr(item_url,".pls")) 
 		sprintf(ext, ".pls"); // item_url has .pls extension, so output should too.
 	      
@@ -511,6 +529,12 @@ int get_url(char *the_url) {
 		continue;
 	      //printf("%d; %s\n",chunk.size,chunk.memory);
 	      playlist = chunk.memory;
+#if 1 /* DEBUG */
+	      if (fp = fopen("ziptuner.itext", "w")){
+		fprintf(fp, "%s\n", playlist); 
+		fclose(fp);
+	      }
+#endif	  
 	    }
 	  }
 	  
