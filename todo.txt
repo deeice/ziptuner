@@ -10,11 +10,13 @@ Search by station name.
      Done
 
 Add main menu options to fetch the lists of tags, states, countries...
+     Done
 
 Handle non-mp3 formats.  Either make note of it on gui or add alt players.
      Done
 
 Maybe multiselect stations instead of single select.
+     Not Likely.  Won't work well with with the play option. 
 
 Stay on station select screen if you hit play.
      Done
@@ -35,5 +37,7 @@ Add bitrate column if the screen is wide enough.
      Done
 
 Try mplayer for play.  See if I need any code changes for that.
-     Done
+     Done.  Added example scripts for VLC and GMU as well.
+
+Add "now playing N" backtitles to the screens with play buttons.
 

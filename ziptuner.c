@@ -88,6 +88,9 @@ int U2L = 0;
 int previtem = 0;
 int favnum = -1;
 int nowplaying = -1;
+char splashtext[64];
+int resize = 1;
+#define SPLASH_MINH 25
 	
 /************************************************/
 static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp) {
@@ -144,11 +147,47 @@ char *utf8tolatin(char *s) {
 }
 
 /************************************************/
+/* Get terminal size for better dialog size estimates. */
+void term_resize(void)
+{
+  struct winsize ws;
+
+  if (!resize) return;
+  
+  width = height = -1;
+  if (ioctl(fileno(stdout), TIOCGWINSZ, &ws) >= 0) {
+    width = ws.ws_col;
+    height = ws.ws_row;
+  }
+  if (width < 5)
+    width = 80;
+  if (height < 2)
+    height = 23;
+  //printf("W,H = (%d, %d)\n",width,height); exit(0);
+
+  resize = 0;
+}
+
+/************************************************/
+// Make a default backsplash title, with extra room for "Now playing NNN"
+/************************************************/
+char *splash(int minh) {
+  if (height < minh)
+    strcpy(splashtext," ");
+  else if ((minh < 0) || (nowplaying < 0)) //"--backtitle \"ziptuner           \" ");
+    strcpy(splashtext,"--backtitle \"ziptuner\" "); 
+  else                                     //"--backtitle \"Now playing %6d\" ",nowplaying);
+    sprintf(splashtext,"--backtitle \"Now playing %d\" ",nowplaying); 
+
+  return splashtext;
+}
+
+/************************************************/
 void gotnone(void) {
   //printf("messagebox Got nothing\n");
   cmd = cmd_out;
   sprintf(cmd, "dialog --clear --title \"Sorry.\" ");
-  strcat(cmd,"--backtitle \"ziptuner\" ");
+  strcat(cmd,splash(-1)); // strcat(cmd,"--backtitle \"ziptuner\" ");
   strcat(cmd,"--msgbox \"None Found.\"");
 #if 0
   sprintf(cmd+strlen(cmd)," %d %d", 6, 20);
@@ -243,7 +282,7 @@ void saveurl(char *filename, char *playlist)
       //printf("Found directory\n");
       sprintf(buff, "%s/%s%s",destfile, filename, ext);
       if (fp = fopen(buff, "w")){
-	fprintf(fp, playlist); 
+	fprintf(fp, "%s", playlist); 
 	fclose(fp);
       }
       //printf("Make new file %s\n",buff);
@@ -322,8 +361,10 @@ int get_url(char *the_url) {
   int retval = 1;
   int rerun = 1;
   char *s, *playlist;
-  
+
   cmd = NULL; // Do not free cmd when done unless we malloc for station pick dialog.
+  nowplaying = -1;
+  
   if ((CURLE_OK != do_curl(the_url)) || (chunk.size <= 0))
     retval = 0;
   else {
@@ -337,84 +378,69 @@ int get_url(char *the_url) {
     else {
       int i = 0;
       //printf("found %d tags\n",n); exit(0);
-      cmd = malloc(chunk.size + strlen(srch_str) + 256); // extra space for "dialog..."
-      sprintf(cmd, "dialog --default-item % 10d ", previtem);
-      //sprintf(cmd+strlen(cmd),"--backtitle \"Playing %6d\" ",nowplaying);
-      sprintf(cmd+strlen(cmd),"--clear --title \"Pick a station\" ");
-      sprintf(cmd+strlen(cmd),"--cancel-label \"Back\" ");
+      cmd = malloc(chunk.size + strlen(srch_str) + 512); // extra space for "dialog..."
+      
+      while (rerun) {
+	rerun = 0; // Only rerun if we hit play or stop.
+	
+	term_resize();
+        sprintf(cmd, "dialog --default-item % 10d ", previtem);
+        strcat(cmd,splash(SPLASH_MINH));
+        sprintf(cmd+strlen(cmd),"--clear --title \"Pick a station\" ");
+        sprintf(cmd+strlen(cmd),"--cancel-label \"Back\" ");
 
-      if (play) {
+        if (play) {
 	  sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
 	  sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Save\" ");
 	  if (stop) { // Use Help button for Stop, but only if play is available.
 	    sprintf(cmd+strlen(cmd),"--help-button --help-label \"Stop\" ");
 	  }
-      }
-      else {
-	  sprintf(cmd+strlen(cmd),"--ok-label \"Save\" ");
-      }
-      sprintf(cmd+strlen(cmd),"--menu \"%d Stations matching <%s>\"", n, srch_str);
-      sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
-
-      for (i=0; i<n; i++){
-	cJSON *item = cJSON_GetArrayItem(json, i);
-	char *id = cJSON_GetObjectItem(item,"id")->valuestring;
-	char *name = cJSON_GetObjectItem(item,"name")->valuestring;
-	char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
-	char *codec = cJSON_GetObjectItem(item,"codec")->valuestring;
-	char *bitrate = cJSON_GetObjectItem(item,"bitrate")->valuestring;
-	//printf("% 3d %s\n",i,name);
-	strcat(cmd," ");
-	sprintf(cmd+strlen(cmd),"%d",i+1);
-	//strcat(cmd,"\"");
-	strcat(cmd," \"");
-#ifndef NOCODEC
-	int j;
-	for (j=0; j<strlen(codec); j++)
-	  codec[j] = tolower(codec[j]);
-	if (!strcmp(codec, "unknown"))
-	  codec[0] = 0;
-	if (strcmp(bitrate, "0"))
-	  sprintf(cmd+strlen(cmd),"% 4s % 3s . ",codec,bitrate);
-	else
-	  sprintf(cmd+strlen(cmd),"% 4s     . ",codec);
-#endif
-	for (s = strpbrk(name, "\""); s; s = strpbrk(s, "\""))
-	  *s = '-'; // Quotes inside strings confuse Dialog.
-	if (U2L) {
-#if 0
-	  if (fp = fopen("utf2lat.txt", "a")){
-	    fprintf(fp, "%s\n",name); 
-	    utf8tolatin(name);
-	    fprintf(fp, "%s\n",name); 
-	    fclose(fp);
-	  }
-	  else 
-#endif
-	    utf8tolatin(name);
 	}
-	strcat(cmd,name);
-	strcat(cmd,"\"");
-      }
-      //printf("\n\%s\n",cmd); exit (0);
-      strcat(cmd, " 2>/tmp/ziptuner.tmp");
-#if 0      
-      if ((fp = fopen("response.json", "w"))){
-	fprintf(fp,"found %d tags\n",n);
-	fprintf(fp, chunk.memory); 
-	fprintf(fp,"\n\n");
-	fprintf(fp, cmd); 
-	fprintf(fp,"\n");
-	fclose(fp);
-      }
+	else {
+	  sprintf(cmd+strlen(cmd),"--ok-label \"Save\" ");
+	}
+	sprintf(cmd+strlen(cmd),"--menu \"%d Stations matching <%s>\"", n, srch_str);
+	
+	if (height < SPLASH_MINH) // Make room for backtitle with nowplaying
+	  sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
+	else
+	  sprintf(cmd+strlen(cmd)," %d %d %d ", height-5, width-6, height-9);
+	
+	for (i=0; i<n; i++){
+	  cJSON *item = cJSON_GetArrayItem(json, i);
+	  char *id = cJSON_GetObjectItem(item,"id")->valuestring;
+	  char *name = cJSON_GetObjectItem(item,"name")->valuestring;
+	  char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
+	  char *codec = cJSON_GetObjectItem(item,"codec")->valuestring;
+	  char *bitrate = cJSON_GetObjectItem(item,"bitrate")->valuestring;
+	  //printf("% 3d %s\n",i,name);
+	  
+	  strcat(cmd," ");
+	  sprintf(cmd+strlen(cmd),"%d",i+1);
+	  //strcat(cmd,"\"");
+	  strcat(cmd," \"");
+#ifndef NOCODEC
+	  int j;
+	  for (j=0; j<strlen(codec); j++)
+	    codec[j] = tolower(codec[j]);
+	  if (!strcmp(codec, "unknown"))
+	    codec[0] = 0;
+	  if (strcmp(bitrate, "0"))
+ 	    sprintf(cmd+strlen(cmd),"% 4s % 3s . ",codec,bitrate);
+	  else
+	    sprintf(cmd+strlen(cmd),"% 4s     . ",codec);
 #endif
-      while (rerun) {
-	rerun = 0; // Only rerun if we hit play or stop.
-	// Replace beginning of cmd with remembered previous selection.
-	sprintf(cmd, "dialog --default-item % 10d", previtem);
-	//sprintf(cmd+strlen(cmd)," --backtitle \"Playing %6d\"",nowplaying);
-	cmd[strlen(cmd)] = ' ';
-	//printf("\n%s\n", cmd);
+	  for (s = strpbrk(name, "\""); s; s = strpbrk(s, "\""))
+	    *s = '-'; // Quotes inside strings confuse Dialog.
+	  if (U2L) {
+	    utf8tolatin(name);
+	  }
+	  strcat(cmd,name);
+	  strcat(cmd,"\"");
+	}
+	//printf("\n\%s\n",cmd); exit (0);
+	strcat(cmd, " 2>/tmp/ziptuner.tmp");
+
 	choice = system ( cmd ) ;
 	//printf("dialog => %d, 0x%08x\n",choice,choice);
 	// Seems to return dialog return value shifted left 8 | signal id in the low 7 bits
@@ -540,7 +566,7 @@ int get_srch_str_from_list(char *the_url) {
     if (n > 0) {
       int i = 0;
       int j = 0;
-      cmd = malloc(chunk.size + strlen(srch_str) + 256); // extra space for "dialog..."
+      cmd = malloc(chunk.size + strlen(srch_str) + 512); // extra space for "dialog..."
       sprintf(cmd, "dialog --clear --title \"Pick from list\" ");
       sprintf(cmd+strlen(cmd),"--menu \"%d %s\"", n, srch_str);
       sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
@@ -634,6 +660,10 @@ void clean_favs(void) // Cleanup allocated (strdup) strings
   files[0] = NULL;
   names[0] = NULL;
 
+  if (cmd)
+    free(cmd);
+  cmd = cmd_out;
+  
   nowplaying = -1; // List is empty, so any index into it is no good.
 }
 
@@ -840,38 +870,24 @@ void get_favs()
   // Find all .m3u and .pls files in the save dirs (including .)
   int rerun;
   char *s;
-  int i,j, k;
+  int i,j, k, n;
   int item;
 
   //printf("get favs\n");
   cmd = cmd_out;
+  nowplaying = -1;
 
 scanfavs:
   rerun = 1;
   i = 0;
   item = 0;
-  sprintf(cmd, "dialog --default-item % 10d ", previtem);
-  //sprintf(cmd+strlen(cmd),"--backtitle \"Playing %6d\" ",nowplaying);
-  sprintf(cmd+strlen(cmd),"--clear --title \"Pick a station\" ");
-  sprintf(cmd+strlen(cmd),"--cancel-label \"Back\" ");
-  if (play) {
-    sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
-    sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Delete\" ");
-  }
-  if (stop) { // Use Help button for Stop.
-    sprintf(cmd+strlen(cmd),"--help-button --help-label \"Stop\" ");
-    //sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Stop\" ");
-  }
-  //sprintf(cmd+strlen(cmd),"--menu \"%d Saved Stations\"", n);
-  sprintf(cmd+strlen(cmd),"--menu \"Saved Stations\"");
-  sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
-
+  
   // Loop through destinations and find playlists
   //  for (j=0; j < destnum; j++) {
   // ALL dest dirs should have the SAME saved playlists, so just use first.
   // Otherwise I would have to check for dups, and that's too much work.
   // Also challenging if one dest is a dir, and one is a playlist file...
-  for (j=0; j < 1; j++) { 
+  for (n=j=0; j < 1; j++) { 
     struct stat path_stat;
     destfile = dest[j];
     int fileexists = (-1 != access(destfile, F_OK));
@@ -881,23 +897,21 @@ scanfavs:
     if (0 != stat(destfile, &path_stat))
       continue;
     if (!S_ISDIR(path_stat.st_mode)) 
-      i = get_favs_from_file();
+      n = get_favs_from_file();
     else 
-      i = get_favs_from_dir();
-
-    // Add all station names found to the dialog list.
-    for (k=0; k<i; k++){
-      sprintf(cmd+strlen(cmd)," %d \"%s\"",k+1,names[k]);
-    }
+      n = get_favs_from_dir();
   }
       
-  if (i == 0) // Give up if no saved stations found.
+  if (n == 0) // Give up if no saved stations found.
   {
     gotnone();
     return;
   }
 
-  strcat(cmd, " 2>/tmp/ziptuner.tmp");
+  // Total up length all station names found and allocate dialog cmd string.
+  for (k=j=0; j<n; j++)
+    k = k + 14 + strlen(names[j]);
+  cmd = malloc(k + 512); // extra space for "dialog..."
 
   //printf("After srch, dest[%d] = <%s>\n", j, destfile);
   
@@ -911,10 +925,33 @@ scanfavs:
   //*****************************
   while (rerun) {
     rerun = 0; // Only rerun if we hit play or stop.
-    // Replace beginning of cmd with remembered previous selection.
-    sprintf(cmd, "dialog --default-item % 10d", previtem);
-    //sprintf(cmd+strlen(cmd)," --backtitle \"Playing %6d\"",nowplaying);
-    cmd[strlen(cmd)] = ' ';
+    
+    term_resize();
+    sprintf(cmd, "dialog --default-item % 10d ", previtem);
+    strcat(cmd, splash(SPLASH_MINH));
+    sprintf(cmd+strlen(cmd),"--clear --title \"Pick a station\" ");
+    sprintf(cmd+strlen(cmd),"--cancel-label \"Back\" ");
+    if (play) {
+      sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
+      sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Delete\" ");
+    }
+    if (stop) { // Use Help button for Stop.
+      sprintf(cmd+strlen(cmd),"--help-button --help-label \"Stop\" ");
+      //sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Stop\" ");
+    }
+    //sprintf(cmd+strlen(cmd),"--menu \"%d Saved Stations\"", n);
+    sprintf(cmd+strlen(cmd),"--menu \"Saved Stations\"");
+    
+    if (height < SPLASH_MINH) // Make room for backtitle with nowplaying
+      sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
+    else
+      sprintf(cmd+strlen(cmd)," %d %d %d ", height-5, width-6, height-9);
+    
+    // Add all station names found to the dialog list.
+    for (j=0; j<n; j++){
+      sprintf(cmd+strlen(cmd)," %d \"%s\"",j+1,names[j]);
+    }
+    strcat(cmd, " 2>/tmp/ziptuner.tmp");
 
     //printf("\n%s\n", cmd);
     choice = system ( cmd ) ;
@@ -985,24 +1022,28 @@ scanfavs:
 }
 
 /************************************************/
+static void
+sigwinchHandler(int sig)
+{
+  resize = 1;
+}
+
+/************************************************/
 int parse_args(int argc, char **argv){
   FILE *fp;
   int i;
   char *s;
 
   /* Get terminal size for better dialog size estimates. */
-  struct winsize ws;
-  width = height = -1;
-  if (ioctl(fileno(stdout), TIOCGWINSZ, &ws) >= 0) {
-    width = ws.ws_col;
-    height = ws.ws_row;
-  }
-  if (width < 5)
-    width = 80;
-  if (height < 2)
-    height = 23;
-  //printf("W,H = (%d, %d)\n",width,height); exit(0);
- 
+  struct sigaction sa;
+
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  sa.sa_handler = sigwinchHandler;
+  if (sigaction(SIGWINCH, &sa, NULL) == -1)
+    {/* Cannot resize.  Oh well... */}
+  term_resize();
+    
   //printf("processing(%d, %s)\n",argc,*argv);   
   /* Just in case I want more args later... */
   for(--argc,++argv; (argc>0) && (**argv=='-'); --argc,++argv)
@@ -1111,7 +1152,7 @@ int main(int argc, char **argv){
     sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-9);
   }
   else { // The screen is large, so display backtitle and small dialog.
-    strcat(cmd,"--backtitle \"ziptuner\" ");
+    splash(-1);
     strcat(cmd,"--menu \"Select Type of Search\"");
     sprintf(cmd+strlen(cmd)," %d %d %d", 16+j, 45, 9+j);
   }
