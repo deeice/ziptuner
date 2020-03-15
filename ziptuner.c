@@ -488,8 +488,15 @@ int get_url(char *the_url) {
 	  }
 
 	  /* Did NOT hit play, so we need to fetch the playlist and save it. */
+
+	  // NOTE: Gotta read https://api.radio-browser.info/
+	  //       Use uuid fields instead of id field (stationuuid, checkuuid, clickuuid)
+	  //       Use countrycode instead of country fields
+	  //
+	  //       When it's fixed, need to move www.radio below to api.radio
+	  
 	  rerun = 1;
-	  sprintf(pls_url, "http://api.radio-browser.info/webservice/v2/m3u/url/%s",id);
+	  sprintf(pls_url, "http://www.radio-browser.info/webservice/v2/m3u/url/%s",id);
 	  /* Start over with curl */
 	  curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
 	  free(chunk.memory);
@@ -505,8 +512,8 @@ int get_url(char *the_url) {
 	    fclose(fp);
 	  }
 #endif
-	  // NOTE: Is the new api giving me more problems?
-	  // Never noticed a 301 error on the old server...
+	  // NOTE: The new api is giving me more problems.
+	  // Never noticed a 301 error on the old server...(and it still works now)
 	  
 	  if (strstr(playlist, "did not find station") || //"did not find station with matching id"
 	      strstr(playlist, "301 Moved Permanently")) { // Yikes, problems with new api???
