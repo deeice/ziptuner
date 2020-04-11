@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <net/if.h>
 #include <arpa/inet.h>
@@ -135,7 +136,8 @@ int favnum = -1;
 int nowplaying = -1;
 char splashtext[64];
 int resize = 1;
-#define SPLASH_MINH 25
+// 24 lines with 5x10 font on 320x240 pixel display (zipit)
+#define SPLASH_MINH 24
 	
 /************************************************/
 void quit(int q)
@@ -160,6 +162,46 @@ static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, voi
   return realsize;
 }
 
+#ifdef NEW_API
+/************************************************/
+void get_int_ip() // Select random radio-browser server (recommended by API) 
+{
+  struct addrinfo* addr;
+  char hbuf[NI_MAXHOST] = "all.api.radio-browser.info";
+  //char* hostaddr;
+  struct sockaddr_in* saddr;
+  socklen_t len = sizeof(struct sockaddr_in);
+  int j,i = -1;
+  
+  int_connection=0;
+  
+  if (0 != getaddrinfo(hbuf, NULL, NULL, &addr)) {
+    fprintf(stderr, "Error resolving hostname %s\n", hbuf);
+    exit(1);
+  }
+  // Use current time as seed for rand.  Keep addr with biggest rand.
+  srand(time(0)); 
+  for (; addr; addr = addr->ai_next)
+  {
+    if (addr->ai_family==AF_INET && addr->ai_socktype==SOCK_STREAM) // TCP
+    {
+      int_connection++;
+      saddr = (struct sockaddr_in*)addr->ai_addr;
+      //hostaddr = inet_ntoa(saddr->sin_addr);
+      //printf("IP is %s\n", hostaddr);
+      if (getnameinfo((struct sockaddr *) saddr, len, hbuf, sizeof(hbuf), 
+		      NULL, 0, NI_NAMEREQD))
+	continue;
+      if (i < (j = rand())){ 
+	i = j;
+	sprintf(api, "https://%s", hbuf);
+	//printf("Address is %s\n", hbuf);
+      }
+    }
+  }
+}
+
+#else
 /************************************************/
 void get_ifaddress(char *intName,struct ifreq *ifr) {
  int fd; 
@@ -185,7 +227,7 @@ void get_int_ip() {
   int_connection=1;
  }
 }
-
+#endif
 
 /************************************************/
 char *utf8tolatin(char *s) {
@@ -1301,6 +1343,8 @@ int main(int argc, char **argv){
   FILE *fp;
   int i,j;
 
+  get_int_ip();  // Works on zipit, but not laptop, so just set connection=1.
+
   parse_args(argc, argv);
 
   if (favnum >= 0)
@@ -1503,7 +1547,7 @@ int main(int argc, char **argv){
 
   if (strlen(srch_str)) {
     // gen_tp();  
-    get_int_ip();  // Works on zipit, but not laptop, so just set connection=1.
+    //get_int_ip();  // Works on zipit, but not laptop, so just set connection=1.
     int_connection=1; 
     //signal (SIGALRM, catch_alarm);
     if (int_connection) {
