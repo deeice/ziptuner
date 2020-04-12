@@ -57,7 +57,7 @@ http://www.radio-browser.info/webservice/v2/pls/url/nnnnn
 http://www.radio-browser.info/webservice/v2/m3u/url/nnnnn
 */
 
-#define NEW_API 2
+//#define NEW_API 2
 
 #ifdef NEW_API
 char srv[512] = "https://fr1.api.radio-browser.info"; // Default server
@@ -172,6 +172,15 @@ void quit(int q)
   printf("\e[H\e[J");
   printf("quit(%d)\n",q);
   exit(0);
+}
+
+/************************************************/
+int dialog(char *cmd)
+{
+  int code = system(cmd);
+  if ((code == 0xff00) || (code == 0x02)) // ESC or ctl-c
+    quit(0); 
+  return code;
 }
 
 /************************************************/
@@ -315,7 +324,7 @@ void gotnone(void) {
 #else
   sprintf(cmd+strlen(cmd)," %d %d", 8, 20);
 #endif
-  system ( cmd ) ;
+  dialog ( cmd ) ;
 }
 
 /************************************************/
@@ -618,7 +627,7 @@ int get_url(char *the_url) {
 	//printf("\n\%s\n",cmd); exit (0);
 	strcat(cmd, " 2>/tmp/ziptuner.tmp");
 
-	choice = system ( cmd ) ;
+	choice = dialog ( cmd ) ;
 	//printf("dialog => %d, 0x%08x\n",choice,choice);
 	// Seems to return dialog return value shifted left 8 | signal id in the low 7 bits
 	// And bit 7 tells if there was a coredump.
@@ -802,7 +811,7 @@ int get_srch_str_from_list(char *the_url) {
       }
       //printf("\n\%s\n",cmd); exit (0);
       strcat(cmd, " 2>/tmp/ziptuner.tmp");
-      choice = system ( cmd ) ;
+      choice = dialog ( cmd ) ;
       //printf("%s\n",chunk.memory); 
       //printf("found %d tags\n",n);
       //printf("%d bogus tags\n",j);
@@ -1164,7 +1173,7 @@ scanfavs:
     strcat(cmd, " 2>/tmp/ziptuner.tmp");
 
     //printf("\n%s\n", cmd);
-    choice = system ( cmd ) ;
+    choice = dialog ( cmd ) ;
    
     //printf("choice = %d\n",choice);
     if (stop && (choice == 0x200)) { // 0x200=help button
@@ -1400,7 +1409,7 @@ int main(int argc, char **argv){
   //printf("cmd = %s\n", cmd);
   //exit(0);
 
-  choice = system ( cmd ) ;
+  choice = dialog ( cmd ) ;
   //if (stop && (choice == 0x300)) {
   if (stop && (choice == 0x200)) {
     system ( stop ) ;
