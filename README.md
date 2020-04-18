@@ -1,5 +1,5 @@
 # ziptuner
-Internet radio station tuner (playlist fetcher) for the console using C and dialog.
+Internet radio station tuner (playlist fetcher) for the console using C and [dialog](https://invisible-island.net/dialog/).
 
 ![Main Screen](doc/ziptuner.png?raw=true)
 
