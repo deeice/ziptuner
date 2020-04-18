@@ -57,7 +57,7 @@ http://www.radio-browser.info/webservice/v2/pls/url/nnnnn
 http://www.radio-browser.info/webservice/v2/m3u/url/nnnnn
 */
 
-//#define NEW_API 2
+#define NEW_API 2
 
 #ifdef NEW_API
 char srv[512] = "https://fr1.api.radio-browser.info"; // Default server
@@ -165,7 +165,13 @@ char splashtext[64];
 int resize = 1;
 // 24 lines with 5x10 font on 320x240 pixel display (zipit)
 #define SPLASH_MINH 24
-	
+
+#ifdef IZ2S
+int skipcert = 1;
+#else
+int skipcert = 0;
+#endif
+  
 /************************************************/
 void quit(int q)
 {
@@ -178,7 +184,10 @@ void quit(int q)
 int dialog(char *cmd)
 {
   int code = system(cmd);
-  if ((code == 0xff00) || (code == 0x02)) // ESC or ctl-c
+  // If "error" is code -1, does it sign extend to 0xffffff00 ?
+  // Puppy linux dialog gives 0x100 (not 0x02) on ctrl-C, which breaks this.
+  // Also what about ctrl-Z.  That stops the job.  Is fg resume ok?
+  if (((code & 0xff00) == 0xff00) || (code == 0x02)) // ESC or ctrl-C
     quit(0); 
   return code;
 }
@@ -495,16 +504,30 @@ int do_curl(char *url)
   curl_easy_setopt(curl_handle, CURLOPT_URL, url);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-  //curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/0.2");
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/0.3");
 #ifdef NEW_API
-#ifdef IZ2S /* No working default cert location on IZ2S */
-  // Tell libcurl to not verify the peer (this works for old puppy linux)
-  curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYPEER, 0);
-  // Or provide a default cert path here. (could NOT make this work on puppy linux)
-  // curl_easy_setopt(curl_handle, CURLOPT_CAPATH, "/usr/local-openssl/ssl/cert.pem"); 
-  // curl_easy_setopt(curl_handle, CURLOPT_CAPATH, "/usr/share/curl/curl-ca-bundle.crt"); 
-#endif
+  // Tell libcurl to not verify the peer (this works for old puppy linux, and IZ2S)
+  // That should be a command line option -k (for all ziptuners, not just IZ2S)
+  // (to avoid the cryptonecronom that eventually invalidates everything)
+  if (skipcert) curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYPEER, 0);
+#ifdef IZ2S /* Tell IZ2S where to find cert.pem (no builtin path, so use debian path) */
+  else curl_easy_setopt(curl_handle, CURLOPT_CAINFO, "/usr/local/share/ca_certificates/cert.pem");
+#endif      /* Download the curl cert.pem file and put it there.  Works on IZ2S. */
+
+  /* =========== No working default cert location on IZ2S =========== */
+  // curl will tell you the default path if you give it a bogus one.  IZ2S says:
+  //    curl --cacert bogus https://www.google.com
+  //    curl: (77) error setting certificate verify locations:
+  //      CAfile: garbled
+  //      CApath: none
+  //
+  // So IZ2S curl was compiled with NO CApath.  And there's no standard between distros.
+  // So I like the debian path /usr/local/share/ca_certificates/cacert.pebm for IZ2S.
+  // Because /usr/local/share is linked in from the SD card in the IZ2S startup script.
+  
+  // Provide a default cert path? (could NOT make this work on puppy linux)
+  // curl_easy_setopt(curl_handle, CURLOPT_CAPATH, "/usr/local-openssl/ssl"); 
+  // curl_easy_setopt(curl_handle, CURLOPT_CAPATH, "/usr/share/curl"); // /curl-ca-bundle.crt");
 #endif
   res = curl_easy_perform(curl_handle);
   if(res != CURLE_OK) {
@@ -1308,6 +1331,9 @@ int parse_args(int argc, char **argv){
     case 'u':
       U2L =1;
       break;
+    case 'k':
+      skipcert =1;
+      break;
     case 'h':
     case '?':
       printf("\n-- ziptuner -- internet radio playlist fetcher.\n"
@@ -1316,8 +1342,9 @@ int parse_args(int argc, char **argv){
 	     "\n"
 	     "  -p sets a command for the play button.\n"
 	     "  -s sets a command for the stop button.\n"
-	     "  -u Convert Latin1 UTF-8 chars to iso-8859-1\n"
+	     "  -u convert Latin1 UTF-8 chars to iso-8859-1\n"
 	     "  -a auto-resume (playing favorite).\n"
+	     "  -k skip ssl CA cert verification.\n"
 	     "  Multiple destinations allowed (files or folders)\n"
 	     "\n"
 	     "eg:\n  "
