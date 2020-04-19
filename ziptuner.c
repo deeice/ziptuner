@@ -1157,6 +1157,7 @@ scanfavs:
 
   //printf("After srch, dest[%d] = <%s>\n", j, destfile);
   
+  previtem = 0;  // Do NOT use a previtem from the "search" menus.
   if (favnum >= 0) {// Now play the station if requested on cmdline.
     previtem = favnum;
     playit(files[previtem-1], NULL); 
