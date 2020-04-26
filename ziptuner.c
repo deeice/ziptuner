@@ -57,9 +57,10 @@ http://www.radio-browser.info/webservice/v2/pls/url/nnnnn
 http://www.radio-browser.info/webservice/v2/m3u/url/nnnnn
 */
 
-#define NEW_API 2
+//#define OLD_API
+//#define DEBUG
 
-#ifdef NEW_API
+#ifndef OLD_API
 char srv[512] = "https://fr1.api.radio-browser.info"; // Default server
 char hbuf[NI_MAXHOST] = "all.api.radio-browser.info"; // Random server selector.
 #endif
@@ -207,7 +208,7 @@ static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, voi
   return realsize;
 }
 
-#ifdef NEW_API
+#ifndef OLD_API
 /************************************************/
 void get_int_ip() // Select random radio-browser server (recommended by API) 
 {
@@ -378,12 +379,12 @@ void playit(char * item_url, char *codec)
     system ( stop ); // This lets us kill any player, if multiple available.
   system ( playcmd );
 
-#if 1
+#ifdef DEBUG
     FILE *fp;
     // This is a good place to save search url, since we got a json list.
     // Save the station search url for re-use.
     if (fp = fopen("ziptuner.play", "w")) {
-1<      fprintf(fp, "%s\n", playcmd);
+      fprintf(fp, "%s\n", playcmd);
       fclose(fp);
     }
 #endif
@@ -490,7 +491,7 @@ struct MemoryStruct chunk;
 /************************************************/
 int do_curl(char *url)
 {
-#if 1 /* DEBUG */
+#ifdef DEBUG
   FILE *fp;
   if (fp = fopen("ziptuner.curl", "w")){
     fprintf(fp, "%s\n", url); 
@@ -505,7 +506,7 @@ int do_curl(char *url)
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
   curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/0.3");
-#ifdef NEW_API
+#ifndef OLD_API
   // Tell libcurl to not verify the peer (this works for old puppy linux, and IZ2S)
   // That should be a command line option -k (for all ziptuners, not just IZ2S)
   // (to avoid the cryptonecronom that eventually invalidates everything)
@@ -563,7 +564,7 @@ int get_url(char *the_url) {
       // This is a good place to save search url, since we got a json list.
       // Save the station search url for re-use.
       // But incompatible APIs require separate search request files.
-#ifdef NEW_API
+#ifndef OLD_API
       // New API uses random servers.  Fixme to NOT save the server name prefix.
       if (fp = fopen("ziptuner.req", "w")) {
 	fprintf(fp, "%s\n", srch_url);
@@ -607,7 +608,7 @@ int get_url(char *the_url) {
 	
 	for (i=0; i<n; i++){
 	  cJSON *item = cJSON_GetArrayItem(json, i);
-#ifdef NEW_API
+#ifndef OLD_API
 	  char *id = cJSON_GetObjectItem(item,"stationuuid")->valuestring;
 	  int bitrate = cJSON_GetObjectItem(item,"bitrate")->valueint;
 #else
@@ -629,7 +630,7 @@ int get_url(char *the_url) {
 	    codec[j] = tolower(codec[j]);
 	  if (!strcmp(codec, "unknown"))
 	    codec[0] = 0;
-#ifdef NEW_API
+#ifndef OLD_API
 	  if (bitrate > 0)
 	    sprintf(cmd+strlen(cmd),"% 4s %3d . ",codec,bitrate);
 #else
@@ -671,7 +672,7 @@ int get_url(char *the_url) {
 	}
 	if (1 == sscanf(buff, "%d", &i)){
 	  cJSON *item = cJSON_GetArrayItem(json, i-1);
-#ifdef NEW_API
+#ifndef OLD_API
 	  char *id = cJSON_GetObjectItem(item,"stationuuid")->valuestring;
 #else
 	  char *id = cJSON_GetObjectItem(item,"id")->valuestring;
@@ -684,7 +685,7 @@ int get_url(char *the_url) {
 	    fprintf(fp, "%d", previtem); 
 	    fclose(fp);
 	  }
-#if 1 /* DEBUG */
+#ifdef DEBUG
 	  if (fp = fopen("ziptuner.ntext", "w")){
 	    fprintf(fp, "Name==%s\n", name); 
 	    fprintf(fp, "I-url=%s\n", item_url); 
@@ -702,7 +703,7 @@ int get_url(char *the_url) {
 
 	  /* Did NOT hit play, so we need to fetch the playlist and save it. */
 	  rerun = 1;
-#ifdef NEW_API
+#ifndef OLD_API
 	  sprintf(pls_url, "%s/m3u/url/%s",srv,id);
 #else
 	  sprintf(pls_url, "http://www.radio-browser.info/webservice/v2/m3u/url/%s",id);
@@ -716,7 +717,7 @@ int get_url(char *the_url) {
 	  //*****************************************
 	  // Verify we got a playlist.  If not, try the url from the big list.
 	  playlist = chunk.memory;
-#if 1 /* DEBUG */
+#ifdef DEBUG
 	  if (fp = fopen("ziptuner.ptext", "w")){
 	    fprintf(fp, "%s\n", playlist); 
 	    fclose(fp);
@@ -743,7 +744,7 @@ int get_url(char *the_url) {
 		continue;
 	      //printf("%d; %s\n",chunk.size,chunk.memory);
 	      playlist = chunk.memory;
-#if 1 /* DEBUG */
+#ifdef DEBUG
 	      if (fp = fopen("ziptuner.itext", "w")){
 		fprintf(fp, "%s\n", playlist); 
 		fclose(fp);
@@ -811,7 +812,7 @@ int get_srch_str_from_list(char *the_url) {
       for (i=0; i<n; i++){
 	cJSON *item = cJSON_GetArrayItem(json, i);
 	char *name = cJSON_GetObjectItem(item,"name")->valuestring;
-#ifdef NEW_API	
+#ifndef OLD_API	
 	int k = cJSON_GetObjectItem(item,"stationcount")->valueint;
 #else
 	char *count = cJSON_GetObjectItem(item,"stationcount")->valuestring;
@@ -1392,7 +1393,7 @@ int main(int argc, char **argv){
   // Main loop of main menu (need to make it a loop instead of a goto)
  retry:
   j=play?1:0; // Add an extra line to menu for favs, if play is available.
-#ifdef NEW_API
+#ifndef OLD_API
   sprintf(srch_url, "%s/json/stations/",srv);
 #else
   sprintf(srch_url, "http://www.radio-browser.info/webservice/json/stations/");
@@ -1412,7 +1413,7 @@ int main(int argc, char **argv){
     strcat(cmd,"--menu \"Select Type of Search\"");
     sprintf(cmd+strlen(cmd)," %d %d %d", 16+j, 45, 9+j);
   }
-#ifdef NEW_API
+#ifndef OLD_API
   if (-1 != access("ziptuner.req", F_OK)){
       strcat(cmd," 0 \"Resume previous search\"");
 #else
@@ -1460,7 +1461,7 @@ int main(int argc, char **argv){
   // Try to reuse prev search if selected option 0.
   buff[0] = 0;
   if (i == 0) {
-#ifdef NEW_API
+#ifndef OLD_API
     if (fp = fopen("ziptuner.req", "r")) {
       fgets(buff, 255, fp);
       fclose(fp);
@@ -1488,7 +1489,7 @@ int main(int argc, char **argv){
   else if ((i >= 6) && (i <= 8))  {
     if (i == 6) {
 	strcpy(srch_str, "Countries");
-#ifdef NEW_API
+#ifndef OLD_API
 	sprintf(buff,"%s/json/countries",srv);
 #else
 	strcpy(buff,"http://www.radio-browser.info/webservice/json/countries");
@@ -1498,7 +1499,7 @@ int main(int argc, char **argv){
     }
     else if (i == 7) {
 	strcpy(srch_str, "Languages");
-#ifdef NEW_API
+#ifndef OLD_API
 	sprintf(buff,"%s/json/languages",srv);
 #else
 	strcpy(buff,"http://www.radio-browser.info/webservice/json/languages");
@@ -1508,7 +1509,7 @@ int main(int argc, char **argv){
     }
     else if (i == 8) {
 	strcpy(srch_str, "Tags");
-#ifdef NEW_API
+#ifndef OLD_API
 	sprintf(buff,"%s/json/tags",srv);
 #else
 	strcpy(buff,"http://www.radio-browser.info/webservice/json/tags");
