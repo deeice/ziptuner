@@ -57,6 +57,7 @@ http://www.radio-browser.info/webservice/v2/pls/url/nnnnn
 http://www.radio-browser.info/webservice/v2/m3u/url/nnnnn
 */
 
+// Some compile options to consider.
 //#define OLD_API
 //#define DEBUG
 
@@ -505,7 +506,7 @@ int do_curl(char *url)
   curl_easy_setopt(curl_handle, CURLOPT_URL, url);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/0.3");
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/0.4");
 #ifndef OLD_API
   // Tell libcurl to not verify the peer (this works for old puppy linux, and IZ2S)
   // That should be a command line option -k (for all ziptuners, not just IZ2S)
@@ -1159,7 +1160,7 @@ scanfavs:
   //printf("After srch, dest[%d] = <%s>\n", j, destfile);
   
   previtem = 0;  // Do NOT use a previtem from the "search" menus.
-  if (favnum >= 0) {// Now play the station if requested on cmdline.
+  if ((favnum > 0) && (favnum <= n)) {// Now play the station if requested on cmdline.
     previtem = favnum;
     playit(files[previtem-1], NULL); 
     nowplaying = i;
@@ -1206,9 +1207,6 @@ scanfavs:
       //printf("\n\n%s\n",stop);exit(0);
       nowplaying = -1;
       rerun = 1;
-      // Forget saved favorite.
-      // Use stop from main menu (or other) to retain favorite.
-      unlink("ziptuner.fav");
       continue;
     }
     if (choice == 0x100) {
@@ -1231,7 +1229,7 @@ scanfavs:
     unlink("ziptuner.fav"); 
     rename("/tmp/ziptuner.tmp", "ziptuner.fav");
     
-#if 0
+#ifdef DEBUG
     if (fp = fopen("zipplay.tmp", "w")) {
       fprintf(fp,"item = %d\n",i-1);
       fprintf(fp,"Name <%s>\n", names[i-1]);
@@ -1531,8 +1529,7 @@ int main(int argc, char **argv){
     get_favs();
     strcpy(buff, "file://.");
     strcpy(srch_str,"");
-    if (-1 != access("ziptuner.item", F_OK))
-      unlink("ziptuner.item");
+    // favs use ziptuner.fav, so no need to unlink("ziptuner.item");
     goto retry;
   }
   else if (-1 != access("ziptuner.item", F_OK))
