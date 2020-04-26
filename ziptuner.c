@@ -506,7 +506,7 @@ int do_curl(char *url)
   curl_easy_setopt(curl_handle, CURLOPT_URL, url);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/0.4");
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/0.5");
 #ifndef OLD_API
   // Tell libcurl to not verify the peer (this works for old puppy linux, and IZ2S)
   // That should be a command line option -k (for all ziptuners, not just IZ2S)
