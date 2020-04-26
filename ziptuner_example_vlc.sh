@@ -1,7 +1,7 @@
 
 # First, put up a dialog to ask about auto-resume.  Then launch ziptuner.
 if [ -f ziptuner.fav ] ; then
-  dialog --clear --title "Zippy Internet Radio Tuner" --yesno "Resume Autoplay?" 0 0
+  dialog --clear --title "Zippy Internet Radio Tuner" --yesno "Resume playing favorite?" 0 0
   [ $? -eq 0 ] && A="-a" || A=
 fi
 

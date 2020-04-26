@@ -161,7 +161,7 @@ int np = 0;
 int choice = 0;
 int U2L = 0;
 int previtem = 0;
-int favnum = -1;
+int favnum = 0;
 int nowplaying = -1;
 char splashtext[64];
 int resize = 1;
@@ -911,7 +911,7 @@ void clean_favs(void) // Cleanup allocated (strdup) strings
   nowplaying = -1; // List is empty, so any index into it is no good.
 }
 
-char *tmp_pls = "/tmp/ziptuner.pls";
+char *tmp_pls = "ziptuner.tmp";
 
 /************************************************/
 // Add (append) an item to the end of a .pls or .m3u playlist file.
@@ -1164,7 +1164,7 @@ scanfavs:
     previtem = favnum;
     playit(files[previtem-1], NULL); 
     nowplaying = i;
-    favnum = -1;
+    favnum = -favnum;
   }
 
   //*****************************
@@ -1225,10 +1225,6 @@ scanfavs:
     }
     else continue;
 
-    // Remember the last fav 
-    unlink("ziptuner.fav"); 
-    rename("/tmp/ziptuner.tmp", "ziptuner.fav");
-    
 #ifdef DEBUG
     if (fp = fopen("zipplay.tmp", "w")) {
       fprintf(fp,"item = %d\n",i-1);
@@ -1246,6 +1242,10 @@ scanfavs:
 	del_fav_in_file(i-1);
       }
       clean_favs();
+      if (favnum == -i){ // Also delete autoplay favorite if same.
+	unlink("ziptuner.fav"); 
+	favnum = 0;
+      }
       goto scanfavs;
     }
     
@@ -1253,6 +1253,11 @@ scanfavs:
 
     /* If we hit play, play the playlist in the background and rerun the list. */
     if (play && (choice == 0)) {
+      if (fp = fopen("ziptuner.fav", "w")) { // Remember this as the current fav 
+	fprintf(fp,"%d\n",i);                // rename() from /tmp fails on IZ2S
+	fclose(fp);
+	favnum = -i;
+      }
       playit(files[i-1], NULL); // Now play the station,
       nowplaying = i;
       rerun = 1;       // and redisplay the list in case we want to change it.
@@ -1385,7 +1390,7 @@ int main(int argc, char **argv){
 
   parse_args(argc, argv);
 
-  if (favnum >= 0)
+  if (favnum > 0)
     get_favs();
   
   // Main loop of main menu (need to make it a loop instead of a goto)
