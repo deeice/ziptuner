@@ -1163,7 +1163,7 @@ scanfavs:
   if ((favnum > 0) && (favnum <= n)) {// Now play the station if requested on cmdline.
     previtem = favnum;
     playit(files[previtem-1], NULL); 
-    nowplaying = i;
+    nowplaying = favnum;
     favnum = -favnum;
   }
 
