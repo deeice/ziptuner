@@ -17,6 +17,7 @@
 #include <arpa/inet.h>
 
 #include <sys/stat.h>
+//#include <sys/wait.h>
 #include <unistd.h>
 
 #include "cJSON.h"
@@ -343,7 +344,8 @@ void playit(char * item_url, char *codec)
 {
   int j;
   char *playcmd = play; // Start with default play command.
-  
+  FILE *fp;
+
   // If we know the codec then check for a matching play command.
   if (codec != NULL)
   {
@@ -358,21 +360,39 @@ void playit(char * item_url, char *codec)
       }
     }
   }
-
+  else{ // Look for a codec in the url before using default.
+    char *playurl = item_url;
+    char ubuf[256];
+    // If url is a playlist, then use playlist contents to search for codec.
+    if (strstr(item_url,".m3u") || strstr(item_url,".pls")) {
+      if (fp = fopen(item_url, "r")) {
+        if (j = fread(ubuf, 1, 255, fp)){
+          ubuf[j] = 0;
+          playurl = ubuf;
+        }
+	fclose(fp);
+      }
+    }
+    for (j=0; j<np; j++) { // Look for a codec in the playurl.
+      if (strstr(playurl, codecs[j])){
+        playcmd = players[j]; // Found a codec in the url so prefer its player.
+	break;
+      }
+    }
+  }
+  
   // Relocate playcmd into buff so we can add playlist (or url) before launch.
   strcpy(buff, playcmd);
   playcmd = buff;
   
-  // If its a stream and not a playlist then...
+  // If its a stream and not a playlist then strip playlist args from playcmd.
   if (!(strstr(item_url,".m3u") || strstr(item_url,".pls"))) {
     char *p = strstr(playcmd,"-@");      // remove mpg123 arg that says its a playlist.
     if (p) 
       for (j=0; j<2; j++) p[j] = ' '; 
     if (p = strstr(playcmd,"-playlist")) // remove mplayer arg that says its a playlist.
-      for (j=0; j<9; j++) p[j] = ' '; 
+      for (j=0; j<9; j++) p[j] = ' ';
   }
-  
-  //printf ("\n%s \"%s\"\n", playcmd, item_url);
 
   // Launch the player, after stopping any currently running player first.
   sprintf(playcmd+strlen(playcmd), " \"%s\" &", item_url);
@@ -381,9 +401,6 @@ void playit(char * item_url, char *codec)
   system ( playcmd );
 
 #ifdef DEBUG
-    FILE *fp;
-    // This is a good place to save search url, since we got a json list.
-    // Save the station search url for re-use.
     if (fp = fopen("ziptuner.play", "w")) {
       fprintf(fp, "%s\n", playcmd);
       fclose(fp);
@@ -506,7 +523,7 @@ int do_curl(char *url)
   curl_easy_setopt(curl_handle, CURLOPT_URL, url);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/0.5");
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/0.6");
 #ifndef OLD_API
   // Tell libcurl to not verify the peer (this works for old puppy linux, and IZ2S)
   // That should be a command line option -k (for all ziptuners, not just IZ2S)
@@ -1389,6 +1406,10 @@ int main(int argc, char **argv){
   get_int_ip();  // Works on zipit, but not laptop, so just set connection=1.
 
   parse_args(argc, argv);
+
+  // IZ2S runs everything under own-tty so init can't reap orphaned zombies. 
+  //signal(SIGCHLD,SIG_IGN); // This should maybe help, but does not.
+  //waitpid(-1, &j, WNOHANG); // Neither does this...
 
   if (favnum > 0)
     get_favs();
