@@ -394,12 +394,44 @@ void playit(char * item_url, char *codec)
       for (j=0; j<9; j++) p[j] = ' ';
   }
 
+
   // Launch the player, after stopping any currently running player first.
-  sprintf(playcmd+strlen(playcmd), " \"%s\" &", item_url);
   if (stop)
     system ( stop ); // This lets us kill any player, if multiple available.
+#if 1
+  sprintf(playcmd+strlen(playcmd), " \"%s\" &", item_url);
   system ( playcmd );
+#else
+  /* 
+     Rather than system a background task (creating orphans and eventually zombies), 
+     try fork() and execl() as in this quote from system POSIX manual: 
+     The system() function shall behave as if a child process were created using fork(), 
+     and the child process invoked the sh utility using execl() as follows: 
+     execl(<shell path>, "sh", "-c", command, (char *)0); 
+     This way the shell will wait for the player (and not orphan it)
+     and I can either reap or ignore the shell, like so:
+     signal(SIGCHLD,SIG_IGN); // This should maybe help, but does not.
+     waitpid(-1, &j, WNOHANG); // Neither does this...
+   */
 
+  sprintf(playcmd+strlen(playcmd), " \"%s\"", item_url);
+
+  pid_t child_pid, sid;
+  child_pid = fork();
+  if (0 == child_pid) {
+    //signal(SIGINT,SIG_IGN);  // Don't let killall (stop cmd) kill the parent.
+    //signal(SIGQUIT,SIG_IGN); // Cover killall -9 or -15.
+    //execl("/bin/sh", "sh", "-c", playcmd, (char *)0); // In child process
+    sid = setsid(); // Run in new (background) session - detached from parent.
+    system ( playcmd );
+    exit(0);
+  }
+  else if (0 > child_pid)
+    {} //process error return from fork
+  else if (0 < child_pid)
+    {} // signal(SIGCHLD,SIG_IGN); // Parent process. Ignore the SIGCHLD.
+#endif
+  
 #ifdef DEBUG
     if (fp = fopen("ziptuner.play", "w")) {
       fprintf(fp, "%s\n", playcmd);
@@ -1453,10 +1485,14 @@ int main(int argc, char **argv){
 
   strcat(cmd," 6 \"List Countries\"");
   strcat(cmd," 7 \"List Languages\"");
+#ifdef ALLOW_LIST_TAGS  
   strcat(cmd," 8 \"List Tags (there are many)\"");
   if (play)
     strcat(cmd," 9 \"List Saved Stations\"");
-
+#else
+  if (play)
+    strcat(cmd," 8 \"List Saved Stations\"");
+#endif
   strcat(cmd, " 2>/tmp/ziptuner.tmp");
 
   //printf("cmd = %s\n", cmd);
@@ -1510,7 +1546,11 @@ int main(int argc, char **argv){
       }
     }
   }
+#ifdef ALLOW_LIST_TAGS  
   else if ((i >= 6) && (i <= 8))  {
+#else
+  else if ((i >= 6) && (i <= 7))  {
+#endif
     if (i == 6) {
 	strcpy(srch_str, "Countries");
 #ifndef OLD_API
@@ -1531,6 +1571,7 @@ int main(int argc, char **argv){
 	strcat(srch_url, "bylanguage/");
 	// about 160 name value stationcount (name always seems same as value)
     }
+#ifdef ALLOW_LIST_TAGS  
     else if (i == 8) {
 	strcpy(srch_str, "Tags");
 #ifndef OLD_API
@@ -1544,13 +1585,18 @@ int main(int argc, char **argv){
 	//
 	// Need to run another dialog in get_srch_str_from_list() to pick a name.
     }
+#endif
     if (!get_srch_str_from_list(buff))
       goto retry;
 
     if (-1 != access("ziptuner.item", F_OK))
       unlink("ziptuner.item");
   }
+#ifdef ALLOW_LIST_TAGS  
   else if (i == 9) {
+#else
+  else if (i == 8) {
+#endif
     // Find all .m3u and .pls files in save dirs (including .)
     get_favs();
     strcpy(buff, "file://.");
