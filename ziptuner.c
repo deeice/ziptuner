@@ -34,6 +34,8 @@ char *destfile = ".";
 char srch_url[512] = "";
 char srch_str[512] = "";
 char pls_url[512] = "";
+//char prev_name[512] = "";
+char now_name[512] = "";
 
 /*
 First get a list to choose from.  (old API)
@@ -164,7 +166,8 @@ int U2L = 0;
 int previtem = 0;
 int favnum = 0;
 int nowplaying = -1;
-char splashtext[64];
+//char splashtext[64];
+char splashtext[256];
 int resize = 1;
 // 24 lines with 5x10 font on 320x240 pixel display (zipit)
 #define SPLASH_MINH 24
@@ -316,10 +319,12 @@ void term_resize(void)
 char *splash(int minh) {
   if (height < minh)
     strcpy(splashtext," ");
-  else if ((minh < 0) || (nowplaying < 0)) //"--backtitle \"ziptuner           \" ");
+  else if ((minh < 0) || (now_name[0] == 0)) // was ((minh < 0) || (nowplaying < 0))
     strcpy(splashtext,"--backtitle \"ziptuner\" "); 
-  else                                     //"--backtitle \"Now playing %6d\" ",nowplaying);
-    sprintf(splashtext,"--backtitle \"Now playing %d\" ",nowplaying); 
+  else if (nowplaying < 0)
+    sprintf(splashtext,"--backtitle \"Now playing | %s\" ",now_name); 
+  else                                    
+    sprintf(splashtext,"--backtitle \"Now playing %d | %s\" ",nowplaying,now_name); 
 
   return splashtext;
 }
@@ -595,7 +600,7 @@ int get_url(char *the_url) {
   char *s, *playlist;
 
   cmd = NULL; // Do not free cmd when done unless we malloc for station pick dialog.
-  nowplaying = -1;
+  nowplaying = -1;  // Station numbers can change on a new search, even if tag is same.
   
   if ((CURLE_OK != do_curl(the_url)) || (chunk.size <= 0))
     retval = 0;
@@ -632,23 +637,25 @@ int get_url(char *the_url) {
       
       while (rerun) {
 	rerun = 0; // Only rerun if we hit play or stop.
-	
+
+        // Dialog button order:  Ok=0  Extra0x300  Cancel=100  Help=0x200
 	term_resize();
         sprintf(cmd, "dialog --default-item % 10d ", previtem);
         strcat(cmd,splash(SPLASH_MINH));
-        sprintf(cmd+strlen(cmd),"--clear --title \"Pick a station\" ");
-        sprintf(cmd+strlen(cmd),"--cancel-label \"Back\" ");
+        strcat(cmd,"--clear --title \"Pick a station\" ");
+        strcat(cmd,"--cancel-label \"Back\" ");
 
         if (play) {
-	  sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
-	  sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Save\" ");
+	  strcat(cmd,"--ok-label \"Play\" ");
+	  strcat(cmd,"--extra-button --extra-label \"Save\" ");
 	  if (stop) { // Use Help button for Stop, but only if play is available.
-	    sprintf(cmd+strlen(cmd),"--help-button --help-label \"Stop\" ");
+	    strcat(cmd,"--help-button --help-label \"Stop\" ");
 	  }
 	}
 	else {
-	  sprintf(cmd+strlen(cmd),"--ok-label \"Save\" ");
-	}
+	  strcat(cmd,"--ok-label \"Save\" ");
+        }
+        
 	sprintf(cmd+strlen(cmd),"--menu \"%d Stations matching <%s>\"", n, srch_str);
 	
 	if (height < SPLASH_MINH) // Make room for backtitle with nowplaying
@@ -710,17 +717,20 @@ int get_url(char *the_url) {
 	if (stop && (choice == 0x200)) {
 	  system ( stop ) ;
 	  //printf("\n\n%s\n",stop);exit(0);
-	  nowplaying = -1;
+          nowplaying = -1;
+          now_name[0] = 0;  // nuke the name so splash() knows.
 	  rerun = 1;
 	  continue;
-	  }
-	buff[0] = 0;
+        }
+        // NOTE: no need for if (choice == 0x100). ziptuner.tmp is EMPTY on Cancel button 
+	buff[0] = 0;  
 	if (fp = fopen("/tmp/ziptuner.tmp", "r")) {
   	  while (fgets(buff, 255, fp) != NULL)
 	    {}
  	  fclose(fp);
-	}
-	if (1 == sscanf(buff, "%d", &i)){
+        }
+        // NOTE: scanf() == 0 on EMPTY ziptuner.tmp file so skip this, rerun=0 will exit loop.
+	if (1 == sscanf(buff, "%d", &i)){ 
 	  cJSON *item = cJSON_GetArrayItem(json, i-1);
 #ifndef OLD_API
 	  char *id = cJSON_GetObjectItem(item,"stationuuid")->valuestring;
@@ -730,9 +740,10 @@ int get_url(char *the_url) {
 	  char *name = cJSON_GetObjectItem(item,"name")->valuestring;
 	  char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
 	  char *codec = cJSON_GetObjectItem(item,"codec")->valuestring;
-	  previtem = i;
-	  if (fp = fopen("ziptuner.item", "w")){
-	    fprintf(fp, "%d", previtem); 
+          previtem = i;
+          if (fp = fopen("ziptuner.item", "w")){
+            fprintf(fp, "File%d=%s\n", previtem, item_url); //fprintf(fp, "%d", previtem);
+            fprintf(fp, "Title%d=%s\n", previtem, name);
 	    fclose(fp);
 	  }
 #ifdef DEBUG
@@ -746,7 +757,8 @@ int get_url(char *the_url) {
 	  /* IF we hit play, play the playlist in the background and rerun the list. */
           if (play && (choice == 0)) {
 	    playit(item_url, codec);
-	    nowplaying = i;
+            nowplaying = i;
+            strcpy(now_name, name);
 	    rerun = 1;
 	    continue;
 	  }
@@ -1209,10 +1221,12 @@ scanfavs:
   //printf("After srch, dest[%d] = <%s>\n", j, destfile);
   
   previtem = 0;  // Do NOT use a previtem from the "search" menus.
+  //prev_name[0] = 0;
   if ((favnum > 0) && (favnum <= n)) {// Now play the station if requested on cmdline.
     previtem = favnum;
     playit(files[previtem-1], NULL); 
     nowplaying = favnum;
+    strcpy(now_name, names[previtem-1]);
     favnum = -favnum;
   }
 
@@ -1220,21 +1234,25 @@ scanfavs:
   while (rerun) {
     rerun = 0; // Only rerun if we hit play or stop.
     
+    // Dialog button order:  Ok=0  Extra0x300  Cancel=100  Help=0x200
     term_resize();
     sprintf(cmd, "dialog --default-item % 10d ", previtem);
     strcat(cmd, splash(SPLASH_MINH));
-    sprintf(cmd+strlen(cmd),"--clear --title \"Pick a station\" ");
-    sprintf(cmd+strlen(cmd),"--cancel-label \"Back\" ");
+    strcat(cmd,"--clear --title \"Pick a station\" ");
+    strcat(cmd,"--cancel-label \"Back\" ");
     if (play) {
-      sprintf(cmd+strlen(cmd),"--ok-label \"Play\" ");
-      sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Delete\" ");
+      strcat(cmd,"--ok-label \"Play\" ");
+      strcat(cmd,"--extra-button --extra-label \"Delete\" ");
+      if (stop) { // Use Help button for Stop, but only if play is available.
+	strcat(cmd,"--help-button --help-label \"Stop\" ");
+      }
     }
-    if (stop) { // Use Help button for Stop.
-      sprintf(cmd+strlen(cmd),"--help-button --help-label \"Stop\" ");
-      //sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Stop\" ");
+    else { // Should never get here.  Favs option is currently dropped when play=NULL.
+      strcat(cmd,"--ok-label \"Delete\" ");
     }
-    //sprintf(cmd+strlen(cmd),"--menu \"%d Saved Stations\"", n);
-    sprintf(cmd+strlen(cmd),"--menu \"Saved Stations\"");
+    
+    //strcat(cmd,"--menu \"%d Saved Stations\"", n);
+    strcat(cmd,"--menu \"Saved Stations\"");
     
     if (height < SPLASH_MINH) // Make room for backtitle with nowplaying
       sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
@@ -1255,6 +1273,7 @@ scanfavs:
       system ( stop ) ;
       //printf("\n\n%s\n",stop);exit(0);
       nowplaying = -1;
+      now_name[0] = 0;  // nuke the name so splash() knows.      
       rerun = 1;
       continue;
     }
@@ -1309,6 +1328,7 @@ scanfavs:
       }
       playit(files[i-1], NULL); // Now play the station,
       nowplaying = i;
+      strcpy(now_name, names[i-1]);
       rerun = 1;       // and redisplay the list in case we want to change it.
       continue;
     }
@@ -1455,10 +1475,10 @@ int main(int argc, char **argv){
   sprintf(srch_url, "http://www.radio-browser.info/webservice/json/stations/");
 #endif
   sprintf(cmd, "dialog --clear --title \"Zippy Internet Radio Tuner\" ");
-  sprintf(cmd+strlen(cmd),"--cancel-label \"Quit\" ");
+  strcat(cmd,"--cancel-label \"Quit\" ");
   if (stop) { // Use Help button for Stop, else we must swap Extra,Cancel buttons.
-    sprintf(cmd+strlen(cmd),"--help-button --help-label \"Stop\" ");
-    //sprintf(cmd+strlen(cmd),"--extra-button --extra-label \"Stop\" ");
+    strcat(cmd,"--help-button --help-label \"Stop\" ");
+    //strcat(cmd,"--extra-button --extra-label \"Stop\" ");
   }
   if ((width < 80) || (height < 23)) { // Fit dialog to small screen.
     strcat(cmd,"--menu \"Select Type of Search\"");
@@ -1539,8 +1559,22 @@ int main(int argc, char **argv){
 	strcpy(srch_url, buff);
 	// If reusing search, attempt to reuse last item selected as well.
 	if (fp = fopen("ziptuner.item", "r")) {
+#if 0
 	  if (1 == fscanf(fp, "%d", &i))
 	    previtem = i;
+#else
+          if (1 == fscanf(fp, "File%d=", &i))
+            previtem = i;
+          // NOTE: Will need prev_name to verify previtem num is still correct.
+          //  Can scan list later and adjust previtem if station nums moved.
+          //  ==|  before sprintf(cmd, "dialog --default-item % 10d ", previtem);  |==
+          //fgets(buff, 255, fp); //read and toss the File33=url line
+          //buff[0] = 0;
+          //fgets(buff, 255, fp);
+          //sscanf(buff, " Title%d=%[^\t\n\r]",&i,prev_name);
+          // buff should have Title33=Station_name\r\n
+          // Trim it to Station_name and put it in a string var 
+#endif
 	  fclose(fp);
 	}
       }
