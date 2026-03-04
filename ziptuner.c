@@ -154,7 +154,7 @@ char *cmd = cmd_out;
 char ext[32] = ".m3u";
 
 FILE *fp;
-char buff[256];
+char buff[600];  //char buff[256];
 
 char *play = NULL; // mpg123tty4
 char *stop = NULL; // killall mpg123; killall mplayer
@@ -167,7 +167,7 @@ int previtem = 0;
 int favnum = 0;
 int nowplaying = -1;
 //char splashtext[64];
-char splashtext[256];
+char splashtext[600]; //char splashtext[256];
 int resize = 1;
 // 24 lines with 5x10 font on 320x240 pixel display (zipit)
 #define SPLASH_MINH 24
@@ -1384,8 +1384,8 @@ int parse_args(int argc, char **argv){
     else switch(c)
     {
     case 'a':
-      if (fp = fopen("ziptuner.fav", "r")) {
-	if (1 == fscanf(fp, "%d", &i))
+      if (fp = fopen("ziptuner.fav", "r")) { // Get num from eg. "22" or "File22=url"
+	if ((1 == fscanf(fp, "%d", &i)) || (1 == fscanf(fp, "%*[^0-9]%d", &i)))
 	  favnum = i;
 	fclose(fp);
       }
@@ -1559,11 +1559,8 @@ int main(int argc, char **argv){
 	strcpy(srch_url, buff);
 	// If reusing search, attempt to reuse last item selected as well.
 	if (fp = fopen("ziptuner.item", "r")) {
-#if 0
-	  if (1 == fscanf(fp, "%d", &i))
-	    previtem = i;
-#else
-          if (1 == fscanf(fp, "File%d=", &i))
+	  // For backward compatibility get num from eg. "22" or "File22=url"
+	  if ((1 == fscanf(fp, "%d", &i)) || (1 == fscanf(fp, "%*[^0-9]%d", &i)))
             previtem = i;
           // NOTE: Will need prev_name to verify previtem num is still correct.
           //  Can scan list later and adjust previtem if station nums moved.
@@ -1574,7 +1571,6 @@ int main(int argc, char **argv){
           //sscanf(buff, " Title%d=%[^\t\n\r]",&i,prev_name);
           // buff should have Title33=Station_name\r\n
           // Trim it to Station_name and put it in a string var 
-#endif
 	  fclose(fp);
 	}
       }
