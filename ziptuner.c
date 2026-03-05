@@ -166,8 +166,7 @@ int U2L = 0;
 int previtem = 0;
 int favnum = 0;
 int nowplaying = -1;
-//char splashtext[64];
-char splashtext[600]; //char splashtext[256];
+char tmp_str[600];
 int resize = 1;
 // 24 lines with 5x10 font on 320x240 pixel display (zipit)
 #define SPLASH_MINH 24
@@ -318,15 +317,15 @@ void term_resize(void)
 /************************************************/
 char *splash(int minh) {
   if (height < minh)
-    strcpy(splashtext," ");
+    strcpy(tmp_str," ");
   else if ((minh < 0) || (now_name[0] == 0)) // was ((minh < 0) || (nowplaying < 0))
-    strcpy(splashtext,"--backtitle \"ziptuner\" "); 
+    strcpy(tmp_str,"--backtitle \"ziptuner\" "); 
   else if (nowplaying < 0)
-    sprintf(splashtext,"--backtitle \"Now playing | %s\" ",now_name); 
+    sprintf(tmp_str,"--backtitle \"Now playing | %s\" ",now_name); 
   else                                    
-    sprintf(splashtext,"--backtitle \"Now playing %d | %s\" ",nowplaying,now_name); 
+    sprintf(tmp_str,"--backtitle \"Now playing %d | %s\" ",nowplaying,now_name); 
 
-  return splashtext;
+  return tmp_str;
 }
 
 /************************************************/
@@ -499,7 +498,7 @@ void saveurl(char *filename, char *playlist)
       //printf("Append to file %s\n",destfile);
       // Just grab the urls.  Fix this to handle multiple urls.
       if ((s = strstr(playlist,"#EXTINF:")) && // its a .mru file.  Get 1st stream.
-	  (2 == sscanf(s, " #EXTINF:%[^,],%[^\t\n\r]",srch_str,srch_url))) {
+	  (2 == sscanf(s, " #EXTINF:%[^,],%[^\t\n\r]",tmp_str,srch_url))) {
 	s += strcspn(s,"\r\n"); // Skip to end of line.
 	s += strspn(s,"\r\n");  // Skip past any CR LF chars.
 	sscanf(s, " %[^\t\n\r]",pls_url);
@@ -993,7 +992,7 @@ void add_fav_to_file(char *destfile, char *url, char* name){
 	break;
       if (1 != sscanf(buff, " NumberOfEntries=%d",&k)) // Write NumEntries later...
 	fputs(buff, FP);
-      if (2 == sscanf(buff, " File%d=%[^\t\n\r]",&k,srch_str))
+      if (2 == sscanf(buff, " File%d=%[^\t\n\r]",&k,tmp_str))
 	pls = 1;
     }
     else {
@@ -1485,7 +1484,7 @@ int main(int argc, char **argv){
     sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-9);
   }
   else { // The screen is large, so display backtitle and small dialog.
-    splash(-1);
+    // splash(-1);  // splash() does nothing useful unless I strcat into cmd.
     strcat(cmd,"--menu \"Select Type of Search\"");
     sprintf(cmd+strlen(cmd)," %d %d %d", 16+j, 45, 9+j);
   }
