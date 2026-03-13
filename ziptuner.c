@@ -38,37 +38,13 @@ char pls_url[512] = "";
 char prev_url[512] = "";
 char now_name[512] = "";
 
-/*
-First get a list to choose from.  (old API)
-http://www.radio-browser.info/webservice/json/tags
-http://www.radio-browser.info/webservice/json/stations/bytag
-
-http://www.radio-browser.info/webservice/json/countries
-http://www.radio-browser.info/webservice/json/stations/bycountry/searchterm 
-
-http://www.radio-browser.info/webservice/json/states/USA/
-http://www.radio-browser.info/webservice/json/stations/bystate/searchterm 
-
-http://www.radio-browser.info/webservice/json/languages
-http://www.radio-browser.info/webservice/json/stations/bylanguage/searchterm 
-
-http://www.radio-browser.info/webservice/json/stations/byname/searchterm 
-
-http://www.radio-browser.info/webservice/json/codecs 
-http://www.radio-browser.info/webservice/json/stations/bycodec/searchterm 
-
-http://www.radio-browser.info/webservice/v2/pls/url/nnnnn
-http://www.radio-browser.info/webservice/v2/m3u/url/nnnnn
-*/
-
 // Some compile options to consider.
-//#define OLD_API
 //#define DEBUG
+//#define IZ2S
+//#define NOCODEC
 
-#ifndef OLD_API
 char srv[512] = "https://fr1.api.radio-browser.info"; // Default server
 char hbuf[NI_MAXHOST] = "all.api.radio-browser.info"; // Random server selector.
-#endif
 
 /*
 New api (maybe http://api instead of https://fr1.api works for http ??)
@@ -107,22 +83,6 @@ NOTE: curl on IZ2S has problems with the certs for https.
       So this should work:  curl_easy_setopt(curl, CURLOPT_CAPATH, capath);
       Add cmdline ziptuner opts for special IZ2S workarounds?  Or #ifdef IZ2S ?
       Maybe -k (ignore cert), and -c certfile, then convert to curl_easy_setopt()
-*/
-
-/*
-NOTE: Gotta read https://api.radio-browser.info/
-             and https://fr1.api.radio-browser.info/
-      Use uuid fields instead of id field (stationuuid, checkuuid, clickuuid)
-        sample json: "stationuuid":"960e57c5-0601-11e8-ae97-52543be04c81"
-
-      Consider countrycode instead of country (../bycountrycodeexect/US)
-      2 letter codes:  https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2
-
-      May need to do nslookup on all.api.radio-browser.info
-      and pick a random Address: line instead of api.radio...
-
-      New api seems to leave out webservice and/or webserviec/v2
-      Gotta test some of this with curl on the cmdline.
 
       Need to use "click counter" api in playit?
          http://fr1.api.radio-browser.info/m3u/url/stationuuid
@@ -130,8 +90,6 @@ NOTE: Gotta read https://api.radio-browser.info/
       Or do I just make it myself?
       see what url_resolved gets me.  May be better than the url.
       debug this with DEBUG code (save stationuuid and url_resolved too)
-
-      Need user-agent setting "-A ziptuner/0.2" for curl requests.
 
       Looks like secure https only for new api searches (301 error for http)
 */	  
@@ -213,7 +171,6 @@ static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, voi
   return realsize;
 }
 
-#ifndef OLD_API
 /************************************************/
 void get_int_ip() // Select random radio-browser server (recommended by API) 
 {
@@ -250,34 +207,6 @@ void get_int_ip() // Select random radio-browser server (recommended by API)
     }
   }
 }
-
-#else
-/************************************************/
-void get_ifaddress(char *intName,struct ifreq *ifr) {
- int fd; 
- fd = socket(AF_INET, SOCK_DGRAM, 0);
- ifr->ifr_addr.sa_family = AF_INET;
- strncpy(ifr->ifr_name, intName, IFNAMSIZ-1);
- ioctl(fd, SIOCGIFADDR, ifr);
- close(fd);
- //printf("%s\n", inet_ntoa(((struct sockaddr_in *)&ifr->ifr_addr)->sin_addr));
-}
-
-/************************************************/
-void get_int_ip() {
- int_connection=0;
- bzero(&ifr_eth,sizeof(ifr_eth)); 
- get_ifaddress((char *)"eth0",&ifr_eth);
- bzero(&ifr_wlan,sizeof(ifr_wlan)); 
- get_ifaddress((char *)"wlan0",&ifr_wlan);
- if (
-   ((struct sockaddr_in *)&ifr_eth.ifr_addr)->sin_addr.s_addr!=0 ||
-   ((struct sockaddr_in *)&ifr_wlan.ifr_addr)->sin_addr.s_addr!=0
-  ) {
-  int_connection=1;
- }
-}
-#endif
 
 /************************************************/
 char *utf8tolatin(char *s) {
@@ -589,7 +518,6 @@ int do_curl(char *url)
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
   curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/0.8");
-#ifndef OLD_API
   // Tell libcurl to not verify the peer (this works for old puppy linux, and IZ2S)
   // That should be a command line option -k (for all ziptuners, not just IZ2S)
   // (to avoid the cryptonecronom that eventually invalidates everything)
@@ -612,7 +540,7 @@ int do_curl(char *url)
   // Provide a default cert path? (could NOT make this work on puppy linux)
   // curl_easy_setopt(curl_handle, CURLOPT_CAPATH, "/usr/local-openssl/ssl"); 
   // curl_easy_setopt(curl_handle, CURLOPT_CAPATH, "/usr/share/curl"); // /curl-ca-bundle.crt");
-#endif
+
   res = curl_easy_perform(curl_handle);
   if(res != CURLE_OK) {
     fprintf(stderr, "curl_easy_perform() failed: %s\n",curl_easy_strerror(res));
@@ -647,18 +575,11 @@ int get_url(char *the_url) {
       // This is a good place to save search url, since we got a json list.
       // Save the station search url for re-use.
       // But incompatible APIs require separate search request files.
-#ifndef OLD_API
       // New API uses random servers.  Fixme to NOT save the server name prefix.
       if (fp = fopen("ziptuner.req", "w")) {
 	fprintf(fp, "%s\n", srch_url);
 	fclose(fp);
       }
-#else
-      if (fp = fopen("ziptuner.url", "w")) {
-	fprintf(fp, "%s\n", srch_url);
-	fclose(fp);
-      }
-#endif
 
       //printf("found %d tags\n",n); exit(0);
       cmd = malloc(chunk.size + strlen(srch_str) + 512); // extra space for "dialog..."
@@ -687,13 +608,8 @@ int get_url(char *the_url) {
         
 	for (i=0; i<n; i++){
 	  cJSON *item = cJSON_GetArrayItem(json, i);
-#ifndef OLD_API
 	  char *id = cJSON_GetObjectItem(item,"stationuuid")->valuestring;
 	  int bitrate = cJSON_GetObjectItem(item,"bitrate")->valueint;
-#else
-	  char *id = cJSON_GetObjectItem(item,"id")->valuestring;
-	  char *bitrate = cJSON_GetObjectItem(item,"bitrate")->valuestring;
-#endif
 	  char *name = cJSON_GetObjectItem(item,"name")->valuestring;
 	  char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
 	  char *codec = cJSON_GetObjectItem(item,"codec")->valuestring;
@@ -709,13 +625,8 @@ int get_url(char *the_url) {
 	    codec[j] = tolower(codec[j]);
 	  if (!strcmp(codec, "unknown"))
 	    codec[0] = 0;
-#ifndef OLD_API
 	  if (bitrate > 0)
 	    sprintf(cmd+strlen(cmd),"% 4s %3d . ",codec,bitrate);
-#else
-	  if (strcmp(bitrate, "0"))
-	    sprintf(cmd+strlen(cmd),"% 4s % 3s . ",codec,bitrate);
-#endif
 	  else
 	    sprintf(cmd+strlen(cmd),"% 4s     . ",codec);
 #endif
@@ -754,11 +665,7 @@ int get_url(char *the_url) {
         // NOTE: scanf() == 0 on EMPTY ziptuner.tmp file so skip this, rerun=0 will exit loop.
 	if (1 == sscanf(buff, "%d", &i)){ 
 	  cJSON *item = cJSON_GetArrayItem(json, i-1);
-#ifndef OLD_API
 	  char *id = cJSON_GetObjectItem(item,"stationuuid")->valuestring;
-#else
-	  char *id = cJSON_GetObjectItem(item,"id")->valuestring;
-#endif
 	  char *name = cJSON_GetObjectItem(item,"name")->valuestring;
 	  char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
 	  char *codec = cJSON_GetObjectItem(item,"codec")->valuestring;
@@ -787,11 +694,8 @@ int get_url(char *the_url) {
 
 	  /* Did NOT hit play, so we need to fetch the playlist and save it. */
 	  rerun = 1;
-#ifndef OLD_API
 	  sprintf(pls_url, "%s/m3u/url/%s",srv,id);
-#else
-	  sprintf(pls_url, "http://www.radio-browser.info/webservice/v2/m3u/url/%s",id);
-#endif
+
 	  /* Start over with curl */
 	  curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
 	  free(chunk.memory);
@@ -896,12 +800,8 @@ int get_srch_str_from_list(char *the_url) {
       for (i=0; i<n; i++){
 	cJSON *item = cJSON_GetArrayItem(json, i);
 	char *name = cJSON_GetObjectItem(item,"name")->valuestring;
-#ifndef OLD_API	
 	int k = cJSON_GetObjectItem(item,"stationcount")->valueint;
-#else
-	char *count = cJSON_GetObjectItem(item,"stationcount")->valuestring;
-	int k = atoi(count);
-#endif
+
 	if (k < 2)
 	  j++;
 	strcat(cmd," ");
@@ -1468,11 +1368,7 @@ int main(int argc, char **argv){
   // Main loop of main menu (need to make it a loop instead of a goto)
  retry:
   j=play?1:0; // Add an extra line to menu for favs, if play is available.
-#ifndef OLD_API
   sprintf(srch_url, "%s/json/stations/",srv);
-#else
-  sprintf(srch_url, "http://www.radio-browser.info/webservice/json/stations/");
-#endif
   sprintf(cmd, "dialog --clear --title \"Zippy Internet Radio Tuner\" ");
   strcat(cmd,"--cancel-label \"Quit\" ");
   if (stop) { // Use Help button for Stop, else we must swap Extra,Cancel buttons.
@@ -1488,13 +1384,8 @@ int main(int argc, char **argv){
     strcat(cmd,"--menu \"Select Type of Search\"");
     sprintf(cmd+strlen(cmd)," %d %d %d", 16+j, 45, 9+j);
   }
-#ifndef OLD_API
   if (-1 != access("ziptuner.req", F_OK)){
       strcat(cmd," 0 \"Resume previous search\"");
-#else
-  if (-1 != access("ziptuner.url", F_OK)){
-      strcat(cmd," 0 \"Resume previous search\"");
-#endif
   }
   strcat(cmd," 1 \"Search by Tag\"");
   strcat(cmd," 2 \"Search by Country\"");
@@ -1504,14 +1395,10 @@ int main(int argc, char **argv){
 
   strcat(cmd," 6 \"List Countries\"");
   strcat(cmd," 7 \"List Languages\"");
-#ifdef ALLOW_LIST_TAGS  
-  strcat(cmd," 8 \"List Tags (there are many)\"");
-  if (play)
-    strcat(cmd," 9 \"List Saved Stations\"");
-#else
+
   if (play)
     strcat(cmd," 8 \"List Saved Stations\"");
-#endif
+
   strcat(cmd, " 2>/tmp/ziptuner.tmp");
 
   //printf("cmd = %s\n", cmd);
@@ -1540,15 +1427,9 @@ int main(int argc, char **argv){
   // Try to reuse prev search if selected option 0.
   buff[0] = 0;
   if (i == 0) {
-#ifndef OLD_API
     if (fp = fopen("ziptuner.req", "r")) {
       fgets(buff, 255, fp);
       fclose(fp);
-#else
-    if (fp = fopen("ziptuner.url", "r")) {
-      fgets(buff, 255, fp);
-      fclose(fp);
-#endif
       if (strlen(buff)) {
 	char *p = strpbrk(buff,"\n\r");
 	if (p) *p = 0;
@@ -1576,57 +1457,26 @@ int main(int argc, char **argv){
       }
     }
   }
-#ifdef ALLOW_LIST_TAGS  
-  else if ((i >= 6) && (i <= 8))  {
-#else
   else if ((i >= 6) && (i <= 7))  {
-#endif
     if (i == 6) {
 	strcpy(srch_str, "Countries");
-#ifndef OLD_API
 	sprintf(buff,"%s/json/countries",srv);
-#else
-	strcpy(buff,"http://www.radio-browser.info/webservice/json/countries");
-#endif
 	strcat(srch_url, "bycountry/");
 	// about 144 name value stationcount (name always seems same as value)
     }
     else if (i == 7) {
 	strcpy(srch_str, "Languages");
-#ifndef OLD_API
 	sprintf(buff,"%s/json/languages",srv);
-#else
-	strcpy(buff,"http://www.radio-browser.info/webservice/json/languages");
-#endif
 	strcat(srch_url, "bylanguage/");
 	// about 160 name value stationcount (name always seems same as value)
     }
-#ifdef ALLOW_LIST_TAGS  
-    else if (i == 8) {
-	strcpy(srch_str, "Tags");
-#ifndef OLD_API
-	sprintf(buff,"%s/json/tags",srv);
-#else
-	strcpy(buff,"http://www.radio-browser.info/webservice/json/tags");
-#endif
-	strcat(srch_url, "bytag/");
-	// about 3000 name value stationcount (name always seems same as value)
-	// but about 1800 are bogus (skip items with stationcount < 2)
-	//
-	// Need to run another dialog in get_srch_str_from_list() to pick a name.
-    }
-#endif
     if (!get_srch_str_from_list(buff))
       goto retry;
 
     if (-1 != access("ziptuner.item", F_OK))
       unlink("ziptuner.item");
   }
-#ifdef ALLOW_LIST_TAGS  
-  else if (i == 9) {
-#else
   else if (i == 8) {
-#endif
     // Find all .m3u and .pls files in save dirs (including .)
     get_favs();
     strcpy(buff, "file://.");
