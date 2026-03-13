@@ -594,7 +594,6 @@ int get_url(char *the_url) {
           cJSON *item = cJSON_GetArrayItem(json, previtem-1);
           char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
           if (strcmp(prev_url,item_url)){
-            previtem = 0;
             for (i=0; i<n; i++){
               item = cJSON_GetArrayItem(json, i);
               item_url = cJSON_GetObjectItem(item,"url")->valuestring;
