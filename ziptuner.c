@@ -517,7 +517,7 @@ int do_curl(char *url)
   curl_easy_setopt(curl_handle, CURLOPT_URL, url);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/0.8");
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/1.0");
   // Tell libcurl to not verify the peer (this works for old puppy linux, and IZ2S)
   // That should be a command line option -k (for all ziptuners, not just IZ2S)
   // (to avoid the cryptonecronom that eventually invalidates everything)
@@ -669,6 +669,7 @@ int get_url(char *the_url) {
 	  char *item_url = cJSON_GetObjectItem(item,"url")->valuestring;
 	  char *codec = cJSON_GetObjectItem(item,"codec")->valuestring;
           previtem = i;
+	  strcpy(prev_url, item_url);
           if (fp = fopen("ziptuner.item", "w")){
             fprintf(fp, "File%d=%s\n", previtem, item_url); //fprintf(fp, "%d", previtem);
             fprintf(fp, "Title%d=%s\n", previtem, name);
