@@ -6,5 +6,5 @@ if [ -f ziptuner.fav ] ; then
 fi
 
 
-# Use mpv in a small xterm window for stream info.  Use a multistream playlist for favorites. 
-./ziptuner $A -p "urxvt -fg grey80 -bg grey30 -fn fixed -e mpv  " -s "killall mpv" playlist.pls
+# Use mpv in a small xterm window for track info.  Use a multistream playlist for favorites. 
+./ziptuner $A -p "urxvt -fg grey80 -bg grey30 -fn fixed -e mpv --quiet " -s "killall mpv" playlist.pls
