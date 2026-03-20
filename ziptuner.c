@@ -423,12 +423,10 @@ void saveurl(char *filename, char *playlist)
   strcpy(srch_url, filename); // Save unmangled filename?
   if (U2L)
     utf8tolatin(filename);
-  for (s = strpbrk(filename, "\""); s; s = strpbrk(s, "\""))
-    *s = '-'; // Quotes inside strings make for ugly filenames.
   for (s = strpbrk(filename, " "); s; s = strpbrk(s, " "))
-    *s = '_'; // Remove spaces from filenames.
-  for (s=strpbrk(filename,"'`;()&|\\/"); s; s=strpbrk(s,"'`;()&|\\/"))
-    *s = '-'; // Remove other bad chars from filenames.
+    *s = '_'; // Remove spaces from filenames.  Use underline so we can put it back later.
+  for (s=strpbrk(filename,"'`;()&|\\/"); s; s=strpbrk(s,"'`\";()&|\\/"))
+    *s = '-'; // Remove quotes and other bad chars from filenames.  Replace with dash.
   
   // Loop through destinations and save the playlist
   //printf("Loop through destfiles/dirs and save the playlist\n");
