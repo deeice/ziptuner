@@ -517,7 +517,7 @@ int do_curl(char *url)
   curl_easy_setopt(curl_handle, CURLOPT_URL, url);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/1.0");
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/1.1");
   // Tell libcurl to not verify the peer (this works for old puppy linux, and IZ2S)
   // That should be a command line option -k (for all ziptuners, not just IZ2S)
   // (to avoid the cryptonecronom that eventually invalidates everything)
@@ -616,8 +616,7 @@ int get_url(char *the_url) {
 	  
 	  strcat(cmd," ");
 	  sprintf(cmd+strlen(cmd),"%d",i+1);
-	  //strcat(cmd,"\"");
-	  strcat(cmd," \"");
+	  strcat(cmd," \'");
 #ifndef NOCODEC
 	  int j;
 	  for (j=0; j<strlen(codec); j++)
@@ -629,13 +628,14 @@ int get_url(char *the_url) {
 	  else
 	    sprintf(cmd+strlen(cmd),"% 4s     . ",codec);
 #endif
-	  for (s = strpbrk(name, "\""); s; s = strpbrk(s, "\""))
+	  for (s = strpbrk(name, "\'"); s; s = strpbrk(s, "\'"))
 	    *s = '-'; // Quotes inside strings confuse Dialog.
+	  
 	  if (U2L) {
 	    utf8tolatin(name);
 	  }
 	  strcat(cmd,name);
-	  strcat(cmd,"\"");
+	  strcat(cmd,"\'");
 	}
 	//printf("\n\%s\n",cmd); exit (0);
 	strcat(cmd, " 2>/tmp/ziptuner.tmp");
@@ -806,17 +806,23 @@ int get_srch_str_from_list(char *the_url) {
 	  j++;
 	strcat(cmd," ");
 	sprintf(cmd+strlen(cmd),"%d",i+1);
-	//strcat(cmd,"\"");
-	strcat(cmd," \"");
+	strcat(cmd," \'");
 	sprintf(cmd+strlen(cmd),"% 5d . ",k);
-	for (s = strpbrk(name, "\""); s; s = strpbrk(s, "\""))
-	  *s = '-'; // Quotes inside strings confuse Dialog.
+	for (s = strpbrk(name, "\'"); s; s = strpbrk(s, "\'"))
+	  *s = '-'; // Quotes inside strings confuse the shell calling Dialog.
 	if (U2L) {
 	    utf8tolatin(name);
 	}
 	strcat(cmd,name);
-	strcat(cmd,"\"");
+	strcat(cmd,"\'");
       }
+#ifdef DEBUG
+      FILE *fp;
+      if (fp = fopen("ziptuner.cmd", "w")){
+        fprintf(fp, "%s\n", cmd); 
+        fclose(fp);
+      }
+#endif
       //printf("\n\%s\n",cmd); exit (0);
       strcat(cmd, " 2>/tmp/ziptuner.tmp");
       choice = dialog ( cmd ) ;
