@@ -290,7 +290,7 @@ void station_dlg(int n, char *label, char *match_str) {
     }
   }
   else {
-    sprintf(cmd+strlen(cmd),"ok-label \"%s\" ",label);
+    sprintf(cmd+strlen(cmd),"--ok-label \"%s\" ",label);
   }
         
   sprintf(cmd+strlen(cmd),"--menu \"%d Stations matching <%s>\"", n, match_str);
