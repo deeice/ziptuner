@@ -43,7 +43,7 @@ char now_name[512] = "";
 //#define IZ2S
 //#define NOCODEC
 
-char srv[512] = "https://fr1.api.radio-browser.info"; // Default server
+char srv[512] = "https://de1.api.radio-browser.info"; // Default server. fr1 is gone.
 char hbuf[NI_MAXHOST] = "all.api.radio-browser.info"; // Random server selector.
 
 /*
@@ -755,6 +755,7 @@ int get_url(char *the_url) {
 
   if (cmd)
     free(cmd);
+  cmd = cmd_out;
   if (0 == retval) {
     gotnone();
   }
@@ -844,6 +845,8 @@ int get_srch_str_from_list(char *the_url) {
 	fclose(fp);
       }
     }
+    if (json) //need to cleanup json
+      cJSON_Delete(json);
   }
   
   // Do I need choice for anything?
@@ -854,11 +857,13 @@ int get_srch_str_from_list(char *the_url) {
 
   if (cmd)
     free(cmd);
+  cmd = cmd_out;
 #if 0
   if (0 == retval) {
     gotnone();
   }
 #endif
+
   curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
   free(chunk.memory);
   chunk.size = 0;
@@ -1361,6 +1366,9 @@ int main(int argc, char **argv){
   get_int_ip();  // Works on zipit, but not laptop, so just set connection=1.
 
   parse_args(argc, argv);
+
+  // Internet says do curl_global_init() here and global_cleanup() before program exits.
+  // curl_global_init(CURL_GLOBAL_ALL); 
 
   // IZ2S runs everything under own-tty so init can't reap orphaned zombies. 
   //signal(SIGCHLD,SIG_IGN); // This should maybe help, but does not.
