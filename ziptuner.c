@@ -515,7 +515,7 @@ int do_curl(char *url)
   curl_easy_setopt(curl_handle, CURLOPT_URL, url);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/1.1");
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/1.2");
   // Tell libcurl to not verify the peer (this works for old puppy linux, and IZ2S)
   // That should be a command line option -k (for all ziptuners, not just IZ2S)
   // (to avoid the cryptonecronom that eventually invalidates everything)
@@ -1012,7 +1012,7 @@ void del_fav_in_file(int station){
 /************************************************/
 // Open .m3u or .pls file and scan for station urls and titles
 /************************************************/
-int get_favs_from_file(void)
+int get_favs_from_file(int n)
 {
   FILE *fp; 
   char *p,*s;
@@ -1022,7 +1022,7 @@ int get_favs_from_file(void)
   fp = fopen(destfile, "r");
   if (fp == NULL)
     return 0;
-  i = k = 0;
+  i = k = n;
   while (fgets(buff, 255, fp) != NULL)
   {
     // .pls -- 
@@ -1072,25 +1072,28 @@ int get_favs_from_dir(void)
   dir = opendir(destfile);
   if (dir == NULL) 
     return 0;
-  strcpy(srch_url, destfile);
-  strcat(srch_url, "/");
+  strcpy(tmp_str, destfile);
+  strcat(tmp_str, "/");
+  destfile=tmp_str;
+  char *pls_file = tmp_str + strlen(tmp_str);
   
   while ((dent = readdir(dir)) != NULL)
   {
-    destfile = dent->d_name;
-    strcpy(pls_url, srch_url);
-    strcat(pls_url, destfile);
+    strcpy(pls_file, dent->d_name);
     
-    if (strstr(destfile, ".m3u") || strstr(destfile, ".pls")){
-      strcpy(buff, destfile);
-      files[i] = strdup(pls_url); // Save the station playlist Filename.
+    if (strstr(pls_file, ".m3u") || strstr(pls_file, ".pls")){
+      int k = get_favs_from_file(i);  // Dig the name and url outta the file if possible.
+      if (i == k)                     
+        files[i] = strdup(destfile);  // Else use the playlist file path as fallback URL.
+      if ((i == k) || !strcmp(names[i],files[i])){ // Use "demangled" filename for fallback station name.
+        strcpy(buff, pls_file);       // NOTE: this requires -playlist for mplayer and breaks curl.
+        if ((s = strstr(buff, ".m3u")) || (s = strstr(buff, ".pls")))
+          *s = 0;
+        for (s = strpbrk(buff, "_"); s; s = strpbrk(s, "_"))
+          *s = ' '; // Restore spaces in filenames.
+        names[i] = strdup(buff); // Save the station Name
+      } 
       lineN[i] = -1;          // And remember its in a playlist dir (not file)
-      if ((s = strstr(buff, ".m3u")) || (s = strstr(buff, ".pls")))
-	*s = 0;
-      for (s = strpbrk(buff, "_"); s; s = strpbrk(s, "_"))
-	*s = ' '; // Restore spaces in filenames.
-      //printf("%s\n", buff);
-      names[i] = strdup(buff); // Save the station Name
 
       if (++i == 255) break;
     } 
@@ -1133,7 +1136,7 @@ scanfavs:
     if (0 != stat(destfile, &path_stat))
       continue;
     if (!S_ISDIR(path_stat.st_mode)) 
-      n = get_favs_from_file();
+      n = get_favs_from_file(0);
     else 
       n = get_favs_from_dir();
   }
