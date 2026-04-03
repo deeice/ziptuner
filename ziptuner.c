@@ -361,7 +361,12 @@ void playit(char * item_url, char *codec)
   if (stop)
     system ( stop ); // This lets us kill any player, if multiple available.
 #if 1
-  sprintf(playcmd+strlen(playcmd), " \"%s\" &", item_url);
+  if (!strstr(playcmd,"%s")) // handle -p "(mpc add '%s' && mpc play)" with url in the middle.
+    strcat(playcmd, " '%s' ");
+  sprintf(tmp_str, playcmd, item_url);
+  strcat(tmp_str, " >/dev/null 2>&1 &");
+  playcmd = tmp_str;
+  //sprintf(playcmd+strlen(playcmd), " \"%s\" &", item_url);
   system ( playcmd );
 #else
   /* 
