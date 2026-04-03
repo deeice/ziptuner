@@ -322,6 +322,13 @@ void playit(char * item_url, char *codec)
       }
     }
   }
+  //-----------------------------------------------------------------------------------
+  // NOTE: get_favs_from_dir() now fetches the url from individual playlist fav files.
+  //       so this code is useless here.  Consider moving it into get_faves_from _dir()
+  //       Also consider adding  #EXT-X-STREAM-INF:CODECS="mp3" to .m3u fav playlists
+  //       and something like ;CODECS="aac" to .pls fav playlists.  Then search for CODECS=
+  //-----------------------------------------------------------------------------------
+#if 0  
   else{ // Look for a codec in the url before using default.
     char *playurl = item_url;
     char ubuf[256];
@@ -342,11 +349,16 @@ void playit(char * item_url, char *codec)
       }
     }
   }
-  
+#endif  
   // Relocate playcmd into buff so we can add playlist (or url) before launch.
   strcpy(buff, playcmd);
   playcmd = buff;
-  
+
+  //-----------------------------------------------------------------------------------
+  // NOTE: get_favs_from_dir() now fetches the url from individual playlist fav files.
+  //       so -@ and -playlist should no longer be used in the playcmd.
+  //-----------------------------------------------------------------------------------
+#if 0  
   // If its a stream and not a playlist then strip playlist args from playcmd.
   if (!(strstr(item_url,".m3u") || strstr(item_url,".pls"))) {
     char *p = strstr(playcmd,"-@");      // remove mpg123 arg that says its a playlist.
@@ -355,8 +367,8 @@ void playit(char * item_url, char *codec)
     if (p = strstr(playcmd,"-playlist")) // remove mplayer arg that says its a playlist.
       for (j=0; j<9; j++) p[j] = ' ';
   }
-
-
+#endif
+  
   // Launch the player, after stopping any currently running player first.
   if (stop)
     system ( stop ); // This lets us kill any player, if multiple available.
