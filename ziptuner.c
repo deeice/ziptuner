@@ -309,7 +309,7 @@ void playit(char * item_url, char *codec)
   FILE *fp;
 
   // If we know the codec then check for a matching play command.
-  if (codec != NULL)
+  if (codec)
   {
     for (j=0; j<strlen(codec); j++)
       codec[j] = tolower(codec[j]);
@@ -428,16 +428,18 @@ void playit(char * item_url, char *codec)
 //   return s;
 // }
 
-void add_fav_to_file(char *destfile, char *url, char* name);
+void add_fav_to_file(char *destfile, char *url, char* name, char *codec);
 
 /************************************************/
-void saveurl(char *filename, char *playlist)
+void saveurl(char *name, char *url, char *codec)
 {
   char *s;
   int i;
   FILE *fp;
+  char *filename = tmp_str;
 
-  strcpy(srch_url, filename); // Save unmangled filename?
+  // Create "mangled" station name with reasonable filename chars (for save to dir option)
+  strcpy(filename, name); 
   if (U2L)
     utf8tolatin(filename);
   for (s = strpbrk(filename, " "); s; s = strpbrk(s, " "))
@@ -458,55 +460,28 @@ void saveurl(char *filename, char *playlist)
     // If directory, create a new file in that directory for this playlist.
     if (fileexists && (0 == stat(destfile, &path_stat)) && S_ISDIR(path_stat.st_mode)) { 
       //printf("Found directory\n");
-      sprintf(buff, "%s/%s%s",destfile, filename, ext);
-      if (fp = fopen(buff, "w")){
-	fprintf(fp, "%s", playlist); 
-	fclose(fp);
-      }
-      //printf("Make new file %s\n",buff);
+      sprintf(buff, "%s/%s%s",destfile, filename, ext); // NOTE: ext is always ".m3u"
+      destfile = malloc(strlen(buff) + 1); 
+      strcpy(destfile,buff);
+      fileexists = 0; //Init a new file below with this mangled station name filepath.
     }
     //*****************************
-    else { // destfile is a file.  Append to it in proper format.
-      int j;
-      //printf("Append to file %s\n",destfile);
-      // Just grab the urls.  Fix this to handle multiple urls.
-      if ((s = strstr(playlist,"#EXTINF:")) && // its a .mru file.  Get 1st stream.
-	  (2 == sscanf(s, " #EXTINF:%[^,],%[^\t\n\r]",tmp_str,srch_url))) {
-	s += strcspn(s,"\r\n"); // Skip to end of line.
-	s += strspn(s,"\r\n");  // Skip past any CR LF chars.
-	sscanf(s, " %[^\t\n\r]",pls_url);
+    if (!fileexists) { // Make a new file if it doesn't exist yet.
+      //printf("Create file %s\n",destfile);
+      if (fp = fopen(destfile, "w")){
+        if (strstr(destfile,".pls"))
+          fprintf(fp, "[playlist]\n"); 
+        else
+          fprintf(fp, "#EXTM3U\n");  // Only PLS and M3U playlist formats are supported.
+        fclose(fp);
       }
-      else if ((s = strstr(playlist,"File1=")) && // its a .pls file.  Get 1st stream.
-	       (2 == sscanf(s, " File%d=%[^\t\n\r]",&j,pls_url))) {
-	s += strcspn(s,"\r\n"); // Skip to end of line.
-	s += strspn(s,"\r\n");  // Skip past any CR LF chars.
-	sscanf(buff, " Title%d=%[^\t\n\r]",&j,srch_url);
-      }
-      else { // Just look for an URL
-	j = 511;
-	if ((s = strstr(playlist,"http://")) ||
-	    (s = strstr(playlist,"rtsp://")) ||
-	    (s = strstr(playlist,"https://")))
-	  j = strcspn(s,"\r\n"); // find end of line.
-	else
-	  s = playlist;
-	strncpy(pls_url,s,j);
-	pls_url[j] = 0;
-      }
-      // Should now have both name and url (name may be NULL for .pls)
-      
-      if (!fileexists) { // Make a new file if it doesn't exist yet.
-	//printf("Create file %s\n",destfile);
-	if (fp = fopen(destfile, "w")){
-	  if (strstr(destfile,".pls"))
-	    fprintf(fp, "[playlist]\n"); 
-	  fclose(fp);
-	}
-      }
-
-      // Only use filename if can't find #EXTINF or Title1=
-      add_fav_to_file(destfile, pls_url, srch_url);
     }
+
+    // Only use filename if can't find #EXTINF or Title1=
+    add_fav_to_file(destfile, url, name, codec);
+    
+    if (destfile != dest[i]) // Free mem from filename created from station name for save to dir.
+      free(destfile);
   }
 }
 
@@ -532,7 +507,7 @@ int do_curl(char *url)
   curl_easy_setopt(curl_handle, CURLOPT_URL, url);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/1.2");
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/1.3");
   // Tell libcurl to not verify the peer (this works for old puppy linux, and IZ2S)
   // That should be a command line option -k (for all ziptuners, not just IZ2S)
   // (to avoid the cryptonecronom that eventually invalidates everything)
@@ -568,7 +543,7 @@ int do_curl(char *url)
 int get_url(char *the_url) {
   int retval = 1;
   int rerun = 1;
-  char *s, *playlist;
+  char *s;
 
   cmd = NULL; // Do not free cmd when done unless we malloc for station pick dialog.
   nowplaying = -1;  // Station numbers can change on a new search, even if tag is same.
@@ -629,9 +604,7 @@ int get_url(char *the_url) {
 	  char *codec = cJSON_GetObjectItem(item,"codec")->valuestring;
 	  //printf("% 3d %s\n",i,name);
 	  
-	  strcat(cmd," ");
-	  sprintf(cmd+strlen(cmd),"%d",i+1);
-	  strcat(cmd," \'");
+	  sprintf(cmd+strlen(cmd)," %d '",i+1);
 #ifndef NOCODEC
 	  int j;
 	  for (j=0; j<strlen(codec); j++)
@@ -639,18 +612,18 @@ int get_url(char *the_url) {
 	  if (!strcmp(codec, "unknown"))
 	    codec[0] = 0;
 	  if (bitrate > 0)
-	    sprintf(cmd+strlen(cmd),"% 4s %3d . ",codec,bitrate);
+	    sprintf(cmd+strlen(cmd),"% 4.4s %3.3d . ",codec,bitrate);
 	  else
-	    sprintf(cmd+strlen(cmd),"% 4s     . ",codec);
+	    sprintf(cmd+strlen(cmd),"% 4.4s     . ",codec);
 #endif
-	  for (s = strpbrk(name, "\'"); s; s = strpbrk(s, "\'"))
+	  for (s = strpbrk(name, "'"); s; s = strpbrk(s, "'"))
 	    *s = '-'; // Quotes inside strings confuse Dialog.
 	  
 	  if (U2L) {
 	    utf8tolatin(name);
 	  }
 	  strcat(cmd,name);
-	  strcat(cmd,"\'");
+	  strcat(cmd,"'");
 	}
 	//printf("\n\%s\n",cmd); exit (0);
 	strcat(cmd, " 2>/tmp/ziptuner.tmp");
@@ -695,6 +668,7 @@ int get_url(char *the_url) {
 	    fprintf(fp, "Name==%s\n", name); 
 	    fprintf(fp, "I-url=%s\n", item_url); 
 	    fprintf(fp, "P-url=%s\n", id); 
+	    fprintf(fp, "codex=%s\n", codec); 
 	    fclose(fp);
 	  }
 #endif	  
@@ -707,9 +681,10 @@ int get_url(char *the_url) {
 	    continue;
 	  }
 
-	  /* Did NOT hit play, so we need to fetch the playlist and save it. */
+	  /* Did NOT hit play, so we need to fetch the playable url and save it. */
 	  rerun = 1;
-	  sprintf(pls_url, "%s/m3u/url/%s",srv,id);
+
+	  sprintf(pls_url, "%s/json/url/%s",srv,id); // The online database records a "click"
 
 	  /* Start over with curl */
 	  curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
@@ -717,51 +692,62 @@ int get_url(char *the_url) {
 	  if (CURLE_OK != do_curl(pls_url))
 	    continue;
 
-	  //*****************************************
-	  // Verify we got a playlist.  If not, try the url from the big list.
-	  playlist = chunk.memory;
+	  strcpy(srch_url, name);    // Use name and url from station list as default.
+	  strcpy(pls_url, item_url);
+	  strcpy(tmp_str+512, codec);  // Probably should just make a global: char codec_str[64]; 
+	  codec = tmp_str+512; 
+
+	  if (item = cJSON_Parse(chunk.memory)) {
+	    char *URL = cJSON_GetObjectItem(item,"url")->valuestring;
+	    int   OK = cJSON_GetObjectItem(item,"ok")->valueint;
 #ifdef DEBUG
-	  if (fp = fopen("ziptuner.ptext", "w")){
-	    fprintf(fp, "%s\n", playlist); 
-	    fclose(fp);
-	  }
+	    char *MSG = cJSON_GetObjectItem(item,"message")->valuestring;
+	    char *ID = cJSON_GetObjectItem(item,"stationuuid")->valuestring;
+	    char *NAME = cJSON_GetObjectItem(item,"name")->valuestring;
+	    if (fp = fopen("ziptuner.ptext", "w")){
+	      fprintf(fp, "JSON\nok:%d\nmsg:%s\nid%s\nname:%s\nurl:%s\n", OK,MSG,ID,NAME,URL); 
+	      fclose(fp);
+	    }
 #endif
-	  if (strstr(playlist, "did not find station") || //"did not find station with matching id"
-	      strstr(playlist, "301 Moved Permanently")) { // Yikes, problems with new api???
-	    playlist = NULL;
-	    if(!strstr(item_url,".pls") && !strstr(item_url,".m3u")) {
-	      //printf("\nDid NOT find station.  Using item_url.\n");
-	      //sprintf(url,"[playlist]\nFile1=%s\n",item_url);
-	      sprintf(pls_url,"%s\n",item_url); // Just a link should work for m3u file...
-	      playlist = pls_url;
-	    }
-	    else { // Item url is a playlist, not a stream.  So fetch the contents.
-	      //printf("\nDid NOT find station.  Fetching playlist from item_url.\n");
-	      if (strstr(item_url,".pls")) 
-		sprintf(ext, ".pls"); // item_url has .pls extension, so output should too.
-	      
-	      /* Start over */
-	      curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
-	      free(chunk.memory);
-	      if (CURLE_OK != do_curl(item_url))
-		continue;
-	      //printf("%d; %s\n",chunk.size,chunk.memory);
-	      playlist = chunk.memory;
+	    if (OK) 
+	      strcpy(pls_url, URL); // Replace station list item_url with click URL if OK.
+	  }
+#ifdef DIG_DEEPER	  
+	  // Dig deeper if pls url is a playlist, not a stream.  So fetch the contents.
+	  if (strstr(pls_url,".pls") || strstr(pls_url,".m3u")) {
+	    /* Start over */
+	    curl_easy_cleanup(curl_handle);     /* cleanup curl stuff */ 
+	    free(chunk.memory);
+	    if (CURLE_OK != do_curl(pls_url))   // fetch the contents of the playlist.
+	      continue;
+	    //printf("%d; %s\n",chunk.size,chunk.memory);
+	    char *playlist = chunk.memory;
 #ifdef DEBUG
-	      if (fp = fopen("ziptuner.itext", "w")){
-		fprintf(fp, "%s\n", playlist); 
-		fclose(fp);
-	      }
-#endif	  
+	    if (fp = fopen("ziptuner.itext", "w")){
+	      fprintf(fp, "%s\n", playlist); 
+	      fclose(fp);
+	    }
+#endif
+	    // Pull resolved url outta playlist file if it's something that mpg123 handles.
+	    // VLC and mpd support more protocols, but also support playlist files.
+	    // Mplayer and mpv may need a --playlist for a playlist file, so outta luck for some.
+	    if ((s = strstr(playlist,"http://")) || (s = strstr(playlist,"https://"))
+		(s = strstr(playlist,"rtsp://"))) {
+	      j = strcspn(s,"\r\n"); // find end of line.
+	      strncpy(pls_url,s,j);
+	      pls_url[j] = 0;
 	    }
 	  }
+#endif	  
 	  
 	  //************ Save the playlist **********
-	  if (playlist){ // Fix the filename and then save the playlist (if we got one).
-	    saveurl(name, playlist);
-	  }	
-	  sprintf(ext, ".m3u"); // Restore default .m3u file extension, just in case.
+	  saveurl(srch_url, pls_url, codec);
 	  //*****************************************
+	  
+	  sprintf(ext, ".m3u"); // Restore default .m3u file extension, just in case.
+
+	  if (item) 
+	    cJSON_Delete(item);
 	}
       }
     }
@@ -795,7 +781,7 @@ int get_url(char *the_url) {
 /************************************************/
 int get_srch_str_from_list(char *the_url) {
   int retval = 0;
-  char *s, *playlist;
+  char *s;
   
   cmd = NULL; // Do not free cmd when done unless we malloc for station pick dialog.
   if ((CURLE_OK != do_curl(the_url)) || (chunk.size <= 0))
@@ -820,17 +806,14 @@ int get_srch_str_from_list(char *the_url) {
 
 	if (k < 2)
 	  j++;
-	strcat(cmd," ");
-	sprintf(cmd+strlen(cmd),"%d",i+1);
-	strcat(cmd," \'");
-	sprintf(cmd+strlen(cmd),"% 5d . ",k);
-	for (s = strpbrk(name, "\'"); s; s = strpbrk(s, "\'"))
+	sprintf(cmd+strlen(cmd)," %d '% 5d . ",i+1,k);
+	for (s = strpbrk(name, "'"); s; s = strpbrk(s, "'"))
 	  *s = '-'; // Quotes inside strings confuse the shell calling Dialog.
 	if (U2L) {
 	    utf8tolatin(name);
 	}
 	strcat(cmd,name);
-	strcat(cmd,"\'");
+	strcat(cmd,"'");
       }
 #ifdef DEBUG
       FILE *fp;
@@ -895,8 +878,11 @@ int get_srch_str_from_list(char *the_url) {
   // Shouldn't need more than a dozen, but *could* realloc for collectors...
 /************************************************/
 char *names[256] = {NULL};   // This is the onscreen station names for dialog. 
-char *files[256] = {NULL};   // This is the playlist filenames or url lines.
+char *urls[256]  = {NULL};   // This is the playlist url lines.
+char *files[256] = {NULL};   // This is the playlist filenames.
+char *codex[256] = {NULL};   // This is the codec for each of the favs.
 signed char lineN[256] = {0};// This tells playlist line number (-1 if in a dir)
+signed char lineP[256] = {0};// This tells last line number for a station.
 
 /************************************************/
 void clean_favs(void) // Cleanup allocated (strdup) strings
@@ -904,17 +890,21 @@ void clean_favs(void) // Cleanup allocated (strdup) strings
   int i;
   
   for (i=0; i<256; i++){
-    if (NULL == names[i])
+    if (!names[i])
       break;
     free(files[i]);
+    free(urls[i]);
     free(names[i]);
+    free(codex[i]);
+    files[i] = NULL;
+    urls[i]  = NULL;
+    names[i] = NULL;
+    codex[i] = NULL;
     lineN[i] = 0;
+    lineP[i] = 0;
   }
-  files[0] = NULL;
-  names[0] = NULL;
 
-  if (cmd)
-    free(cmd);
+  free(cmd);       // Keep it simple... free(NULL) is harmless.
   cmd = cmd_out;
   
   nowplaying = -1; // List is empty, so any index into it is no good.
@@ -925,7 +915,7 @@ char *tmp_pls = "ziptuner.tmp";
 /************************************************/
 // Add (append) an item to the end of a .pls or .m3u playlist file.
 /************************************************/
-void add_fav_to_file(char *destfile, char *url, char* name){
+void add_fav_to_file(char *destfile, char *url, char* name, char *codec){
   FILE *fp, *FP;
   int k = 0;  // j is .pls item number to delete.  k is old .pls item nums.
   int pls = 0;
@@ -952,6 +942,7 @@ void add_fav_to_file(char *destfile, char *url, char* name){
 
   if (pls) { // Add our FileN to the playlist, and close it up.
     k = k+1;
+    fprintf(FP,";CODECS=\"%s\"\n",codec);
     fprintf(FP,"File%d=%s\n",k,url);
     fprintf(FP,"Title%d=%s\n",k,name);
     fprintf(FP,"\n");
@@ -960,7 +951,8 @@ void add_fav_to_file(char *destfile, char *url, char* name){
       fprintf(FP, "%s", buff);
   }
   else {
-    fprintf(FP,"#EXTINF:1,%s\n",name);
+    fprintf(FP,"#CODECS=\"%s\"\n",codec);
+    fprintf(FP,"#EXTINF:-1,%s\n",name);
     fprintf(FP,"%s\n",url);
   }
     
@@ -980,43 +972,36 @@ void add_fav_to_file(char *destfile, char *url, char* name){
 /************************************************/
 void del_fav_in_file(int station){
   FILE *fp, *FP;
-  int i,j,k = 0;  // j is .pls item number to delete.  k is old .pls item nums.
-  int m = 0;      // m is .pls renumber counter (new item numbers)
-  int n, pls = 0;
-  
+  int i,k = 0;  // j is .pls item number to delete.  k is old .pls item nums.
+  int m = 0;      // m is .pls item number adjustment.
+  int n,p, pls = 0;
+
+  destfile = files[station];
   if (NULL == (fp = fopen(destfile, "r"))) return;
   if (NULL == (FP = fopen(tmp_pls, "w"))) return;
 
   n = lineN[station]; // Get the line number in the file for this station.
+  p = lineP[station]; // Get the line number in the file for this station.
   for (i=0; fgets(buff, 255, fp) != NULL; i++)
   {
-    if (pls){ // Skip FileN. Update item nums associated with FileM (M != N) 
-      if (2 == sscanf(buff, " File%d=%[^\t\n\r]",&k,srch_url)){
-	if (i == n) j = k;  // Delete all lines where k = j.
-	else m += 1;        // Otherwise increment the .pls renumber counter.
-	sprintf(buff,"File%d=%s\n",m,srch_url);
-	}
+    if ((i >= n) && (i <= p)) // Skip lines from FileN. 
+      continue;
+    if (pls){ 
+      if (i > p) // Adjust subsequent item numbers. 
+	m = -1;  
+      if (2 == sscanf(buff, " File%d=%[^\t\n\r]",&k,srch_url))
+	sprintf(buff,"File%d=%s\n",k+m,srch_url);
       else if (2 == sscanf(buff, " Title%d=%[^\t\n\r]",&k,srch_url)) 
-	sprintf(buff,"Title%d=%s\n",m,srch_url);
+	sprintf(buff,"Title%d=%s\n",k+m,srch_url);
       else if (2 == sscanf(buff, " Length%d=%[^\t\n\r]",&k,srch_url))
-	sprintf(buff,"Length%d=%s\n",m,srch_url);
-      // NOTE: Using m assumes NumberOfEntries comes *after* all File items.
+	sprintf(buff,"Length%d=%s\n",k+m,srch_url);
       else if (1 == sscanf(buff, " NumberOfEntries=%d",&k)){
-	sprintf(buff,"NumberOfEntries=%d\n",k-1); // Use k-1 instead of m?
-	j = -1; // This is not part of FileN, so must not skip fputs().
+	sprintf(buff,"NumberOfEntries=%d\n",k+m); 
       }
-      else if (1 == sscanf(buff, " %[^\t\n\r]",srch_url)) 
-	j = -1; // If not known field (or blank line) then done with FileN.
-    
-      if (k != j)
-	fputs(buff, FP); // Not part of entry to be deleted, so do fputs().
     }
-    // If .m3u then delete #EXTINF line and next line with URL
-    else if ((i < n) || (i > (n+1))){ 
-      fputs(buff, FP);      // copy line to new file, and check if .pls file.
-      if (pls = (NULL != strstr(buff, "[playlist]"))) // Should be 1st line 
-	j = -1; // Do not skip fputs() until we reach the entry to be deleted.
-    }
+    else
+      pls = strstr(buff, "[playlist]"); // Should be 1st line 
+    fputs(buff, FP); // Not part of entry to be deleted, so do fputs().
   }
   fclose(fp);
   fclose(FP);
@@ -1029,27 +1014,36 @@ void del_fav_in_file(int station){
 /************************************************/
 // Open .m3u or .pls file and scan for station urls and titles
 /************************************************/
-int get_favs_from_file(int n)
+int get_favs_from_file(int i)
 {
   FILE *fp; 
   char *p,*s;
-  int i,j,k;
+  int j,k,n;
+
+  // Note this should avoid dups.  But that's really only a problem for foolish users.
   
   //printf("Found playlist file\n");
   fp = fopen(destfile, "r");
   if (fp == NULL)
     return 0;
-  i = k = n;
+  k = n = 0;
   while (fgets(buff, 255, fp) != NULL)
   {
+    // CODECS is used for both .m3u and .pls
+    if (p = strstr(buff, "CODECS=\""))
+      if (1 == sscanf(p+8, "%[^,.\t\n\r\"]",tmp_str))
+	codex[i] = strdup(tmp_str);
     // .pls -- 
     if (2 == sscanf(buff, " File%d=%[^\t\n\r]",&j,pls_url)){
-      strcpy(srch_url,pls_url);
+      strcpy(srch_url,pls_url);  // Use URL for fallback station name .
       if (fgets(buff, 255, fp) != NULL)
 	sscanf(buff, " Title%d=%[^\t\n\r]",&j,srch_url);
-      files[i] = strdup(pls_url);
+      files[i] = strdup(destfile);
+      urls[i] = strdup(pls_url);
       names[i] = strdup(srch_url);
-      lineN[i] = k++;               // Save the Line Number in the file.
+      lineN[i] = n;                 // Save the Line Number in the file.
+      lineP[i] = ++k;               // Save the Line Number in the file.
+      n = k+1;
       if (++i == 255) break;
     }
     // .mru -- After #EXTINF: should be "nnn,StationName" (nnn is play time secs)
@@ -1058,12 +1052,17 @@ int get_favs_from_file(int n)
       if (fgets(buff, 255, fp) == NULL)
 	break;
       sscanf(buff, " %[^\t\n\r]",srch_url);
+      files[i] = strdup(destfile);
       names[i] = strdup(pls_url);
-      files[i] = strdup(srch_url);
-      lineN[i] = k++;               // Save the Line Number in the file.
+      urls[i] = strdup(srch_url);
+      lineN[i] = n;                 // Save the Line Number in the file.
+      lineP[i] = ++k;               // Save the Line Number in the file.
+      n = k+1;
       if (++i == 255) break;
     }
     k++;
+    if (strstr(buff, "[playlist]") || strstr(buff, "#EXTM3U"))
+      n = k;
   }
   fclose(fp);
 
@@ -1079,40 +1078,33 @@ int get_favs_from_dir(void)
 {
   DIR *dir;
   struct dirent *dent;
-  char *s;
-  int i = 0;
-
-  //printf("Found playlist directory\n");
+  int k, i = 0;
+  char *pls_file;
+  char pls_path[512];  // Storage for creating filepaths of playlist files.
 
   // Maybe call scandir() to filter .m3u and .pls files?
 
+  //printf("Found playlist directory\n");
   dir = opendir(destfile);
   if (dir == NULL) 
     return 0;
-  strcpy(tmp_str, destfile);
-  strcat(tmp_str, "/");
-  destfile=tmp_str;
-  char *pls_file = tmp_str + strlen(tmp_str);
+  strcpy(pls_path, destfile); 
+  strcat(pls_path, "/");      
+  destfile=pls_path;
+  pls_file = pls_path + strlen(pls_path);
   
   while ((dent = readdir(dir)) != NULL)
   {
     strcpy(pls_file, dent->d_name);
     
     if (strstr(pls_file, ".m3u") || strstr(pls_file, ".pls")){
-      int k = get_favs_from_file(i);  // Dig the name and url outta the file if possible.
-      if (i == k)                     
-        files[i] = strdup(destfile);  // Else use the playlist file path as fallback URL.
-      if ((i == k) || !strcmp(names[i],files[i])){ // Use "demangled" filename for fallback station name.
-        strcpy(buff, pls_file);       // NOTE: this requires -playlist for mplayer and breaks curl.
-        if ((s = strstr(buff, ".m3u")) || (s = strstr(buff, ".pls")))
-          *s = 0;
-        for (s = strpbrk(buff, "_"); s; s = strpbrk(s, "_"))
-          *s = ' '; // Restore spaces in filenames.
-        names[i] = strdup(buff); // Save the station Name
-      } 
-      lineN[i] = -1;          // And remember its in a playlist dir (not file)
+      k = get_favs_from_file(i);  // Dig the name and url outta the file if possible.
 
-      if (++i == 255) break;
+      // If the file has only ONE url, then mark file for deletion if that fav is deleted.
+      if ((i+1) == k)
+        lineN[i] = -1;  
+      i = k;
+      if (i >= 255) break;  
     } 
   }
   closedir(dir);
@@ -1137,13 +1129,9 @@ scanfavs:
   rerun = 1;
   i = 0;
   item = 0;
-  
-  // Loop through destinations and find playlists
-  //  for (j=0; j < destnum; j++) {
-  // ALL dest dirs should have the SAME saved playlists, so just use first.
-  // Otherwise I would have to check for dups, and that's too much work.
-  // Also challenging if one dest is a dir, and one is a playlist file...
-  for (n=j=0; j < 1; j++) { 
+
+  // Search dest[i] list for favs.
+  for (n=j=0; j < destnum; j++) { 
     struct stat path_stat;
     destfile = dest[j];
     int fileexists = (-1 != access(destfile, F_OK));
@@ -1156,6 +1144,10 @@ scanfavs:
       n = get_favs_from_file(0);
     else 
       n = get_favs_from_dir();
+    // ALL dest[i] should have the SAME saved playlists, so just use first found.
+    if (n)
+      break;
+
   }
       
   if (n == 0) // Give up if no saved stations found.
@@ -1175,7 +1167,7 @@ scanfavs:
   //prev_name[0] = 0;
   if ((favnum > 0) && (favnum <= n)) {// Now play the station if requested on cmdline.
     previtem = favnum;
-    playit(files[previtem-1], NULL); 
+    playit(urls[previtem-1], codex[previtem-1]);  
     nowplaying = favnum;
     strcpy(now_name, names[previtem-1]);
     favnum = -favnum;
@@ -1189,7 +1181,11 @@ scanfavs:
 
     // Add all station names found to the dialog list.
     for (j=0; j<n; j++){
-      sprintf(cmd+strlen(cmd)," %d \"%s\"",j+1,names[j]);
+#ifdef DEBUG // 
+      sprintf(cmd+strlen(cmd)," %d '%4.4s %s'",j+1,codex[j],names[j]);
+#else
+      sprintf(cmd+strlen(cmd)," %d '%s'",j+1,names[j]);
+#endif
     }
     strcat(cmd, " 2>/tmp/ziptuner.tmp");
 
@@ -1224,9 +1220,11 @@ scanfavs:
 #ifdef DEBUG
     if (fp = fopen("zipplay.tmp", "w")) {
       fprintf(fp,"item = %d\n",i-1);
+      fprintf(fp,"from <%s>\n",files[i-1]);
       fprintf(fp,"Name <%s>\n", names[i-1]);
-      fprintf(fp,"Playing <%s>\n", files[i-1]);
-      fprintf(fp,"line %d\n", lineN[i-1]);
+      fprintf(fp,"Playing <%s>\n", urls[i-1]);
+      fprintf(fp,"line %d..%d\n", lineN[i-1],lineP[i-1]);
+      fprintf(fp,"codex <%s>\n", codex[i-1]);
       fclose(fp);
     }
 #endif
@@ -1254,7 +1252,7 @@ scanfavs:
 	fclose(fp);
 	favnum = -i;
       }
-      playit(files[i-1], NULL); // Now play the station,
+      playit(urls[i-1], codex[i-1]); // Now play the station, 
       nowplaying = i;
       strcpy(now_name, names[i-1]);
       rerun = 1;       // and redisplay the list in case we want to change it.
