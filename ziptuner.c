@@ -42,6 +42,7 @@ char now_name[512] = "";
 //#define DEBUG
 //#define IZ2S
 //#define NOCODEC
+#define LOGVIEWER
 
 char srv[512] = "https://de1.api.radio-browser.info"; // Default server. fr1 is gone.
 char hbuf[NI_MAXHOST] = "all.api.radio-browser.info"; // Random server selector.
@@ -106,6 +107,7 @@ struct ifreq ifr_wlan;
 int int_connection=0;
 
 int width, height;
+int dlg_w, dlg_h, sel_h, box_h; // calculate dialog dimensions in term_resize()
 
 char cmd_out[CMD_OUT_MAX];  
 char *cmd = cmd_out;
@@ -238,7 +240,13 @@ void term_resize(void)
   if (height < 2)
     height = 23;
   //printf("W,H = (%d, %d)\n",width,height); exit(0);
-
+  dlg_w = width-6;
+  dlg_h = height-3;
+  box_h = height-9;
+  if (height < SPLASH_MINH) // Make room for backtitle with nowplaying
+    sel_h = dlg_h;
+  else
+    sel_h = dlg_h-2;
   resize = 0;
 }
 
@@ -274,6 +282,26 @@ void gotnone(void) {
 }
 
 /************************************************/
+#ifdef LOGVIEWER
+char *logfile = NULL;
+
+void viewlog(void) {
+  cmd = cmd_out;
+  sprintf(cmd, "dialog --clear --title \"Log Viewer\" ");
+  strcat(cmd,splash(SPLASH_MINH));
+  // More buttons would be handy, but Dialog only allows exit_button for tail and textbox.
+  // sprintf(cmd+strlen(cmd),"--extra-button --extra-label xtra ");
+  // sprintf(cmd+strlen(cmd),"--help-button --help-label hlp ");
+  //strcat(cmd,"--cancel-label \"Back\" ");
+  strcat(cmd,"--exit-label Back --tailbox ");
+  strcat(cmd,logfile);
+  //sprintf(cmd+strlen(cmd)," %d %d", 22, 53);
+  sprintf(cmd+strlen(cmd)," %d %d ", sel_h, dlg_w);
+  dialog ( cmd ) ;
+}
+#endif
+
+/************************************************/
 void station_dlg(int n, char *label, char *match_str) {
   // Dialog button order:  Ok=0  Extra0x300  Cancel=100  Help=0x200
   term_resize();
@@ -294,11 +322,7 @@ void station_dlg(int n, char *label, char *match_str) {
   }
         
   sprintf(cmd+strlen(cmd),"--menu \"%d Stations matching <%s>\"", n, match_str);
-	
-  if (height < SPLASH_MINH) // Make room for backtitle with nowplaying
-    sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
-  else
-    sprintf(cmd+strlen(cmd)," %d %d %d ", height-5, width-6, height-9);
+  sprintf(cmd+strlen(cmd)," %d %d %d ", sel_h, dlg_w, box_h);
 }
 
 /************************************************/
@@ -376,7 +400,8 @@ void playit(char * item_url, char *codec)
   if (!strstr(playcmd,"%s")) // handle -p "(mpc add '%s' && mpc play)" with url in the middle.
     strcat(playcmd, " '%s' ");
   sprintf(tmp_str, playcmd, item_url);
-  strcat(tmp_str, " >/dev/null 2>&1 &");
+  // may want to send ICY msgs to log file so do NOT add any redirection here.
+  strcat(tmp_str, " &");  // strcat(tmp_str, " >/dev/null 2>&1 &");  
   playcmd = tmp_str;
   //sprintf(playcmd+strlen(playcmd), " \"%s\" &", item_url);
   system ( playcmd );
@@ -798,7 +823,7 @@ int get_srch_str_from_list(char *the_url) {
       cmd = malloc(chunk.size + strlen(srch_str) + 512); // extra space for "dialog..."
       sprintf(cmd, "dialog --clear --title \"Pick from list\" ");
       sprintf(cmd+strlen(cmd),"--menu \"%d %s\"", n, srch_str);
-      sprintf(cmd+strlen(cmd)," %d %d %d ", height-3, width-6, height-9);
+      sprintf(cmd+strlen(cmd)," %d %d %d ", dlg_h, dlg_w, box_h);
       for (i=0; i<n; i++){
 	cJSON *item = cJSON_GetArrayItem(json, i);
 	char *name = cJSON_GetObjectItem(item,"name")->valuestring;
@@ -1328,6 +1353,14 @@ int parse_args(int argc, char **argv){
 	argc--;
       }
       break;
+#ifdef LOGVIEWER
+    case 'l':
+      if (argc > 1){
+	logfile = *++argv;
+	argc--;
+      }
+      break;
+#endif
     case 'u':
       U2L =1;
       break;
@@ -1342,6 +1375,9 @@ int parse_args(int argc, char **argv){
 	     "\n"
 	     "  -p sets a command for the play button.\n"
 	     "  -s sets a command for the stop button.\n"
+#ifdef LOGVIEWER
+	     "  -l logfile\n"
+#endif
 	     "  -u convert Latin1 UTF-8 chars to iso-8859-1\n"
 	     "  -a auto-resume (playing favorite).\n"
 	     "  -k skip ssl CA cert verification.\n"
@@ -1407,7 +1443,7 @@ int main(int argc, char **argv){
   }
   if ((width < 80) || (height < 23)) { // Fit dialog to small screen.
     strcat(cmd,"--menu \"Select Type of Search\"");
-    sprintf(cmd+strlen(cmd)," %d %d %d", height-3, width-6, height-9);
+    sprintf(cmd+strlen(cmd)," %d %d %d", dlg_h, dlg_w, box_h);
   }
   else { // The screen is large, so display backtitle and small dialog.
     // splash(-1);  // splash() does nothing useful unless I strcat into cmd.
@@ -1426,8 +1462,13 @@ int main(int argc, char **argv){
   strcat(cmd," 6 \"List Countries\"");
   strcat(cmd," 7 \"List Languages\"");
 
-  if (play)
+  if (play) {
     strcat(cmd," 8 \"List Saved Stations\"");
+#ifdef LOGVIEWER
+    if (logfile)
+      strcat(cmd," 9 \"View Log\"");
+#endif    
+  }
 
   strcat(cmd, " 2>/tmp/ziptuner.tmp");
 
@@ -1514,6 +1555,15 @@ int main(int argc, char **argv){
     // favs use ziptuner.fav, so no need to unlink("ziptuner.item");
     goto retry;
   }
+#ifdef LOGVIEWER
+  else if (i == 9) {
+    if (-1 != access(logfile, F_OK))
+      viewlog();
+    else
+      gotnone();
+    goto retry;
+  }
+#endif
   else if (-1 != access("ziptuner.item", F_OK))
     unlink("ziptuner.item");
 
@@ -1546,7 +1596,7 @@ int main(int argc, char **argv){
     strcat(srch_url, "bytag/");
     break;
   }
-  sprintf(cmd+strlen(cmd),"\"Search for:\" %d %d 2> /tmp/ziptuner.tmp", height-3, width-6);
+  sprintf(cmd+strlen(cmd),"\"Search for:\" %d %d 2> /tmp/ziptuner.tmp", dlg_h, dlg_w);
 
   system ( cmd ) ;
 
