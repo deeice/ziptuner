@@ -17,7 +17,7 @@
 #include <arpa/inet.h>
 
 #include <sys/stat.h>
-//#include <sys/wait.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "cJSON.h"
@@ -285,7 +285,9 @@ void gotnone(void) {
 #ifdef LOGVIEWER
 char *logfile = NULL;
 
-void viewlog(void) {
+int viewlog(void) {
+  if (-1 == access(logfile, F_OK))
+    return 0;
   cmd = cmd_out;
   sprintf(cmd, "dialog --clear --title \"Log Viewer\" ");
   strcat(cmd,splash(SPLASH_MINH));
@@ -298,6 +300,7 @@ void viewlog(void) {
   //sprintf(cmd+strlen(cmd)," %d %d", 22, 53);
   sprintf(cmd+strlen(cmd)," %d %d ", sel_h, dlg_w);
   dialog ( cmd ) ;
+  return 1;
 }
 #endif
 
@@ -396,7 +399,13 @@ void playit(char * item_url, char *codec)
   // Launch the player, after stopping any currently running player first.
   if (stop)
     system ( stop ); // This lets us kill any player, if multiple available.
-#if 1
+#ifdef LOGVIEWER
+  // This would be nice, but the logging pipeline overwrites it on the next StreamTitle update.
+  // sprintf(tmp_str, "echo 'Now Playing: %s' >> %s", now_name, logfile);
+  // system ( tmp_str );
+  // The last pipe step is currently sed, but I expect any pipeline would be similar.
+#endif
+
   if (!strstr(playcmd,"%s")) // handle -p "(mpc add '%s' && mpc play)" with url in the middle.
     strcat(playcmd, " '%s' ");
   sprintf(tmp_str, playcmd, item_url);
@@ -404,8 +413,23 @@ void playit(char * item_url, char *codec)
   strcat(tmp_str, " &");  // strcat(tmp_str, " >/dev/null 2>&1 &");  
   playcmd = tmp_str;
   //sprintf(playcmd+strlen(playcmd), " \"%s\" &", item_url);
+#if 1
   system ( playcmd );
-#else
+#else // DOUBLE_FORK
+  pid_t pid = fork();
+  if (pid == 0) {              // Inside the first child
+    pid_t grandchild = fork(); // Fork a SECOND time to create the grandchild
+    if (grandchild == 0) {       // Inside the grandchild (This will run your command)
+      // Hand the entire complex pipeline string directly to /bin/sh -c
+      execl("/bin/sh", "sh", "-c", playcmd, (char *)NULL);
+      _exit(1); // If execl fails, exit instantly so we don't pollute the process tree
+    }
+    _exit(0); // 1st child exits immediately, makeing grandchild an orphan, forcing kernel to hand it to PID 1 (init)
+  }
+  if (pid > 0)               // The parent (ziptuner) immediately reaps the first child
+      waitpid(pid, NULL, 0); // Because 1st child died instantly, this waitpid tales a millisecond.
+#endif
+#ifdef SYSTEM_FORK_CHILD
   /* 
      Rather than system a background task (creating orphans and eventually zombies), 
      try fork() and execl() as in this quote from system POSIX manual: 
@@ -532,7 +556,7 @@ int do_curl(char *url)
   curl_easy_setopt(curl_handle, CURLOPT_URL, url);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/1.3");
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/1.4");
   // Tell libcurl to not verify the peer (this works for old puppy linux, and IZ2S)
   // That should be a command line option -k (for all ziptuners, not just IZ2S)
   // (to avoid the cryptonecronom that eventually invalidates everything)
@@ -699,9 +723,12 @@ int get_url(char *the_url) {
 #endif	  
 	  /* IF we hit play, play the playlist in the background and rerun the list. */
           if (play && (choice == 0)) {
-	    playit(item_url, codec);
             nowplaying = i;
             strcpy(now_name, name);
+	    playit(item_url, codec);
+#ifdef LOGVIEWER
+            viewlog();
+#endif
 	    rerun = 1;
 	    continue;
 	  }
@@ -1192,10 +1219,13 @@ scanfavs:
   //prev_name[0] = 0;
   if ((favnum > 0) && (favnum <= n)) {// Now play the station if requested on cmdline.
     previtem = favnum;
-    playit(urls[previtem-1], codex[previtem-1]);  
     nowplaying = favnum;
-    strcpy(now_name, names[previtem-1]);
     favnum = -favnum;
+    strcpy(now_name, names[previtem-1]);
+    playit(urls[previtem-1], codex[previtem-1]);  
+#ifdef LOGVIEWER
+    viewlog();
+#endif
   }
 
   //*****************************
@@ -1277,9 +1307,12 @@ scanfavs:
 	fclose(fp);
 	favnum = -i;
       }
-      playit(urls[i-1], codex[i-1]); // Now play the station, 
       nowplaying = i;
       strcpy(now_name, names[i-1]);
+      playit(urls[i-1], codex[i-1]); // Now play the station, 
+#ifdef LOGVIEWER
+      viewlog();
+#endif
       rerun = 1;       // and redisplay the list in case we want to change it.
       continue;
     }
@@ -1412,6 +1445,14 @@ int parse_args(int argc, char **argv){
 }
 
 /************************************************/
+#ifdef NOT_YET_MAYBE_SOON
+void sigchld_handler(int sig) {
+   // signal(SIGCHLD, sigchld_handler);
+   while (waitpid(-1, NULL, WNOHANG) > 0);
+}
+#endif
+
+/************************************************/
 int main(int argc, char **argv){
   char *s;
   FILE *fp;
@@ -1428,6 +1469,14 @@ int main(int argc, char **argv){
   //signal(SIGCHLD,SIG_IGN); // This should maybe help, but does not.
   //waitpid(-1, &j, WNOHANG); // Neither does this...
 
+#ifdef NOT_YET_MAYBE_SOON
+  struct sigaction sa;
+  sa.sa_handler = sigchld_handler;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = SA_RESTART | SA_NOCLDSTOP; // SA_RESTART prevents system calls from failing
+  sigaction(SIGCHLD, &sa, NULL);
+#endif
+  
   if (favnum > 0)
     get_favs();
   
@@ -1557,9 +1606,7 @@ int main(int argc, char **argv){
   }
 #ifdef LOGVIEWER
   else if (i == 9) {
-    if (-1 != access(logfile, F_OK))
-      viewlog();
-    else
+    if (!viewlog())
       gotnone();
     goto retry;
   }
