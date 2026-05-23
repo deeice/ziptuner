@@ -141,7 +141,8 @@ int skipcert = 0;
 /************************************************/
 void quit(int q)
 {
-  printf("\e[H\e[J");
+  system("stty sane"); // printf("\ec"); // reset needed on IZ2S ??
+  printf("\e[H\e[J"); // Cursor HOME (0,0) and clear to end of screen
   printf("quit(%d)\n",q);
   exit(0);
 }
@@ -288,6 +289,7 @@ char *logfile = NULL;
 int viewlog(void) {
   if (-1 == access(logfile, F_OK))
     return 0;
+  char *cmd_ptr = cmd; // Make sure we use cmd_out instead of potentially small buffer from malloc
   cmd = cmd_out;
   sprintf(cmd, "dialog --clear --title \"Log Viewer\" ");
   strcat(cmd,splash(SPLASH_MINH));
@@ -299,7 +301,8 @@ int viewlog(void) {
   strcat(cmd,logfile);
   //sprintf(cmd+strlen(cmd)," %d %d", 22, 53);
   sprintf(cmd+strlen(cmd)," %d %d ", sel_h, dlg_w);
-  dialog ( cmd ) ;
+  dialog ( cmd );
+  cmd = cmd_ptr; // Restore whatever alt buffer we were using, if any.
   return 1;
 }
 #endif
@@ -326,6 +329,24 @@ void station_dlg(int n, char *label, char *match_str) {
         
   sprintf(cmd+strlen(cmd),"--menu \"%d Stations matching <%s>\"", n, match_str);
   sprintf(cmd+strlen(cmd)," %d %d %d ", sel_h, dlg_w, box_h);
+}
+
+/************************************************/
+void stopit() // This lets us kill any player, if multiple available.
+{ 
+#if 0
+  system ( stop ); 
+#else
+  // system(stop) blocks SIGCHLD so we cannot reap the player and get a zombie instead.
+  pid_t stop_pid = fork();
+  if (stop_pid == 0) {
+    execl("/bin/sh", "sh", "-c", stop, (char *)NULL);
+    _exit(127); // Safe exit if execl fails
+  }
+  int status;
+  waitpid(stop_pid, &status, 0);
+  sleep(1); // Allow time for player to cleanup because next system(dialog) blocks SIGCHLD.
+#endif
 }
 
 /************************************************/
@@ -398,7 +419,7 @@ void playit(char * item_url, char *codec)
   
   // Launch the player, after stopping any currently running player first.
   if (stop)
-    system ( stop ); // This lets us kill any player, if multiple available.
+    stopit(); // This lets us kill any player, if multiple available.
 #ifdef LOGVIEWER
   // This would be nice, but the logging pipeline overwrites it on the next StreamTitle update.
   // sprintf(tmp_str, "echo 'Now Playing: %s' >> %s", now_name, logfile);
@@ -409,55 +430,21 @@ void playit(char * item_url, char *codec)
   if (!strstr(playcmd,"%s")) // handle -p "(mpc add '%s' && mpc play)" with url in the middle.
     strcat(playcmd, " '%s' ");
   sprintf(tmp_str, playcmd, item_url);
-  // may want to send ICY msgs to log file so do NOT add any redirection here.
-  strcat(tmp_str, " &");  // strcat(tmp_str, " >/dev/null 2>&1 &");  
-  playcmd = tmp_str;
-  //sprintf(playcmd+strlen(playcmd), " \"%s\" &", item_url);
-#if 1
+  playcmd = tmp_str;   // may want to send ICY msgs to log file so do NOT add ">/dev/null 2>&1" here.
+#if 0
+  strcat(playcmd, " &");  // Run it in the background if using system.  (ffmpeg is grand-child, or great)
   system ( playcmd );
-#else // DOUBLE_FORK
+#else
+  // Running playcmd in background thru system() makes it an orphaned grandchild reparented to init.
   pid_t pid = fork();
-  if (pid == 0) {              // Inside the first child
-    pid_t grandchild = fork(); // Fork a SECOND time to create the grandchild
-    if (grandchild == 0) {       // Inside the grandchild (This will run your command)
-      // Hand the entire complex pipeline string directly to /bin/sh -c
-      execl("/bin/sh", "sh", "-c", playcmd, (char *)NULL);
-      _exit(1); // If execl fails, exit instantly so we don't pollute the process tree
-    }
-    _exit(0); // 1st child exits immediately, makeing grandchild an orphan, forcing kernel to hand it to PID 1 (init)
+  if (pid == 0) { // Hand the entire complex pipeline string directly to /bin/sh -c
+    execl("/bin/sh", "sh", "-c", playcmd, (char *)NULL);
+    _exit(1); // If execl fails, exit instantly so we don't pollute the process tree
   }
-  if (pid > 0)               // The parent (ziptuner) immediately reaps the first child
-      waitpid(pid, NULL, 0); // Because 1st child died instantly, this waitpid tales a millisecond.
-#endif
-#ifdef SYSTEM_FORK_CHILD
-  /* 
-     Rather than system a background task (creating orphans and eventually zombies), 
-     try fork() and execl() as in this quote from system POSIX manual: 
-     The system() function shall behave as if a child process were created using fork(), 
-     and the child process invoked the sh utility using execl() as follows: 
-     execl(<shell path>, "sh", "-c", command, (char *)0); 
-     This way the shell will wait for the player (and not orphan it)
-     and I can either reap or ignore the shell, like so:
-     signal(SIGCHLD,SIG_IGN); // This should maybe help, but does not.
-     waitpid(-1, &j, WNOHANG); // Neither does this...
-   */
-
-  sprintf(playcmd+strlen(playcmd), " \"%s\"", item_url);
-
-  pid_t child_pid, sid;
-  child_pid = fork();
-  if (0 == child_pid) {
-    //signal(SIGINT,SIG_IGN);  // Don't let killall (stop cmd) kill the parent.
-    //signal(SIGQUIT,SIG_IGN); // Cover killall -9 or -15.
-    //execl("/bin/sh", "sh", "-c", playcmd, (char *)0); // In child process
-    sid = setsid(); // Run in new (background) session - detached from parent.
-    system ( playcmd );
-    exit(0);
+  if (fp = fopen("/tmp/ziptuner.playpid", "w")) {
+    fprintf(fp, "%d\n", pid);
+    fclose(fp);
   }
-  else if (0 > child_pid)
-    {} //process error return from fork
-  else if (0 < child_pid)
-    {} // signal(SIGCHLD,SIG_IGN); // Parent process. Ignore the SIGCHLD.
 #endif
   
 #ifdef DEBUG
@@ -556,7 +543,7 @@ int do_curl(char *url)
   curl_easy_setopt(curl_handle, CURLOPT_URL, url);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/1.4");
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "ziptuner/1.3");
   // Tell libcurl to not verify the peer (this works for old puppy linux, and IZ2S)
   // That should be a command line option -k (for all ziptuners, not just IZ2S)
   // (to avoid the cryptonecronom that eventually invalidates everything)
@@ -684,7 +671,7 @@ int get_url(char *the_url) {
 	// Or -1 (32 bits) if system failed.
 	// So really anything but 0=ok or 0x300=xtra means cancel/die (maybe 0x200=help?)
 	if (stop && (choice == 0x200)) {
-	  system ( stop ) ;
+	  stopit();
 	  //printf("\n\n%s\n",stop);exit(0);
           nowplaying = -1;
           now_name[0] = 0;  // nuke the name so splash() knows.
@@ -956,7 +943,8 @@ void clean_favs(void) // Cleanup allocated (strdup) strings
     lineP[i] = 0;
   }
 
-  free(cmd);       // Keep it simple... free(NULL) is harmless.
+  if (cmd != cmd_out) // Do not free non-heap cmd_out[] buffer.
+    free(cmd);        // free(NULL) is harmless though.
   cmd = cmd_out;
   
   nowplaying = -1; // List is empty, so any index into it is no good.
@@ -1249,7 +1237,7 @@ scanfavs:
    
     //printf("choice = %d\n",choice);
     if (stop && (choice == 0x200)) { // 0x200=help button
-      system ( stop ) ;
+      stopit() ;
       //printf("\n\n%s\n",stop);exit(0);
       nowplaying = -1;
       now_name[0] = 0;  // nuke the name so splash() knows.      
@@ -1445,12 +1433,10 @@ int parse_args(int argc, char **argv){
 }
 
 /************************************************/
-#ifdef NOT_YET_MAYBE_SOON
 void sigchld_handler(int sig) {
-   // signal(SIGCHLD, sigchld_handler);
+   signal(SIGCHLD, sigchld_handler); // re-register handler
    while (waitpid(-1, NULL, WNOHANG) > 0);
 }
-#endif
 
 /************************************************/
 int main(int argc, char **argv){
@@ -1468,15 +1454,16 @@ int main(int argc, char **argv){
   // IZ2S runs everything under own-tty so init can't reap orphaned zombies. 
   //signal(SIGCHLD,SIG_IGN); // This should maybe help, but does not.
   //waitpid(-1, &j, WNOHANG); // Neither does this...
-
-#ifdef NOT_YET_MAYBE_SOON
+#if 1
+  signal(SIGCHLD, sigchld_handler);
+#else
   struct sigaction sa;
   sa.sa_handler = sigchld_handler;
   sigemptyset(&sa.sa_mask);
   sa.sa_flags = SA_RESTART | SA_NOCLDSTOP; // SA_RESTART prevents system calls from failing
   sigaction(SIGCHLD, &sa, NULL);
 #endif
-  
+
   if (favnum > 0)
     get_favs();
   
@@ -1527,7 +1514,7 @@ int main(int argc, char **argv){
   choice = dialog ( cmd ) ;
   //if (stop && (choice == 0x300)) {
   if (stop && (choice == 0x200)) {
-    system ( stop ) ;
+    stopit() ;
     //printf("\n\n%s\n",stop);
     //nowplaying = -1;
     quit(1);

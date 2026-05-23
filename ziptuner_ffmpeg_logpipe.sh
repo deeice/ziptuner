@@ -9,7 +9,8 @@ if [ -f ziptuner.fav ] ; then
 fi
 
 # Set up a pipe and a tail process to run sed filter on ziptuner.log for tailbox dialog in ziptuner.
-touch /tmp/ziptuner.log  # Could echo >ziptuner.log to restart from scratch.
+#touch /tmp/ziptuner.log  # Could echo >ziptuner.log to restart from scratch.
+{ echo; date; echo "===== ZIPTUNER STARTUP ====="; } >>/tmp/ziptuner.log 2>&1
 
 tail -10000 -f /tmp/ziptuner.log | sed -u -e "/meta.*StreamTitle/I!d" -e "s/\r//g" -e "s/.*StreamTitle..//" -e "s/\x27;.*//" >/tmp/logpipe &
 SED_PID=$!
@@ -19,8 +20,8 @@ jobs -p %+ > /tmp/ziptuner.logpid
 read -r TAILPIPE_PID < /tmp/ziptuner.logpid
 
 LANG=C DIALOGRC=/usr/local/share/ziptuner/dialogrc.soho ziptuner $A -u \
- -p '{ echo && date && ffmpeg -hide_banner -sample_fmt s16 -icy 1 -i %s -f oss /dev/dsp -nostats -v 40 ; } >> /tmp/ziptuner.log 2>&1' \
- -s '{ killall -2 ffmpeg; sleep 1; killall -9 ffmpeg; } 2>/dev/null' \
+ -p '{ echo; date; exec ffmpeg -hide_banner -sample_fmt s16 -icy 1 -i %s -f oss /dev/dsp -nostats -v 40 ; } >> /tmp/ziptuner.log 2>&1' \
+ -s 'killall -2 ffmpeg 2>/dev/null' \
  -l /tmp/logpipe \
  /usr/share/radio /mnt/sd0/gmu/playlist.m3u 
 
