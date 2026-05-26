@@ -23,6 +23,7 @@ LANG=C DIALOGRC=/usr/local/share/ziptuner/dialogrc.soho ziptuner $A -u \
  -p '{ echo; date; exec ffmpeg -hide_banner -sample_fmt s16 -icy 1 -i %s -f oss /dev/dsp -nostats -v 40 ; } >> /tmp/ziptuner.log 2>&1' \
  -s 'killall -2 ffmpeg 2>/dev/null' \
  -l /tmp/logpipe \
+ -x rexima \
  /usr/share/radio /mnt/sd0/gmu/playlist.m3u 
 
 # Cleanup.  -- stops option parsing.  -PID treats PID as the entire Process Group ID (PGID) 

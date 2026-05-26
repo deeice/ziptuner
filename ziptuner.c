@@ -283,6 +283,18 @@ void gotnone(void) {
 }
 
 /************************************************/
+// Allow x y and z extra menu commands for mixer and such.
+/************************************************/
+char *x_cmd = NULL;
+char *y_cmd = NULL;
+char *z_cmd = NULL;
+
+void xtra_fn(char *str) {
+  if ( str )
+    system ( str ); 
+}
+
+/************************************************/
 #ifdef LOGVIEWER
 char *logfile = NULL;
 
@@ -1382,6 +1394,24 @@ int parse_args(int argc, char **argv){
       }
       break;
 #endif
+    case 'x':
+      if (argc > 1){
+	x_cmd = *++argv;
+	argc--;
+      }
+      break;
+    case 'y':
+      if (argc > 1){
+	y_cmd = *++argv;
+	argc--;
+      }
+      break;
+    case 'z':
+      if (argc > 1){
+	z_cmd = *++argv;
+	argc--;
+      }
+      break;
     case 'u':
       U2L =1;
       break;
@@ -1396,6 +1426,7 @@ int parse_args(int argc, char **argv){
 	     "\n"
 	     "  -p sets a command for the play button.\n"
 	     "  -s sets a command for the stop button.\n"
+	     "  -x -y -z add a command to main menu. (-x mixer).\n"
 #ifdef LOGVIEWER
 	     "  -l logfile\n"
 #endif
@@ -1470,6 +1501,12 @@ int main(int argc, char **argv){
   // Main loop of main menu (need to make it a loop instead of a goto)
  retry:
   j=play?1:0; // Add an extra line to menu for favs, if play is available.
+#ifdef LOGVIEWER
+  //j+=logfile?1:0;
+#endif
+  j+=x_cmd?1:0; 
+  j+=y_cmd?1:0; 
+  j+=z_cmd?1:0; 
   sprintf(srch_url, "%s/json/stations/",srv);
   sprintf(cmd, "dialog --clear --title \"Zippy Internet Radio Tuner\" ");
   strcat(cmd,"--cancel-label \"Quit\" ");
@@ -1505,6 +1542,12 @@ int main(int argc, char **argv){
       strcat(cmd," 9 \"View Log\"");
 #endif    
   }
+  if (x_cmd)
+    sprintf(cmd+strlen(cmd)," X \"%s\"", x_cmd);
+  if (y_cmd)
+    sprintf(cmd+strlen(cmd)," Y \"%s\"", y_cmd);
+  if (z_cmd)
+    sprintf(cmd+strlen(cmd)," Z \"%s\"", z_cmd);
 
   strcat(cmd, " 2>/tmp/ziptuner.tmp");
 
@@ -1528,9 +1571,15 @@ int main(int argc, char **argv){
     fclose(fp);
     //printf("\n\n%s\n",buff);
   }
-  if (1 != sscanf(buff, "%d", &i))
+  char *c;   // Allow single digit numbers and X,Y,Z (extra commands) on main menu.
+  if (1 != sscanf(buff, "%c", &c))
     quit(1); // /tmp/ziptuner.tmp is empty, so they hit cancel.  Pack up and go home.
-
+  i=c;
+  if ((i >= '0') && (i <= '9'))
+    i -= '0';
+  if ((i >= 'X') && (i <= 'Z'))
+    i += 32; // lowercase it.
+  
   // Try to reuse prev search if selected option 0.
   buff[0] = 0;
   if (i == 0) {
@@ -1595,6 +1644,18 @@ int main(int argc, char **argv){
   else if (i == 9) {
     if (!viewlog())
       gotnone();
+    goto retry;
+  }
+  else if (i == 'x') {
+    xtra_fn(x_cmd);
+    goto retry;
+  }
+  else if (i == 'y') {
+    xtra_fn(y_cmd);
+    goto retry;
+  }
+  else if (i == 'z') {
+    xtra_fn(z_cmd);
     goto retry;
   }
 #endif
